@@ -1,0 +1,10 @@
+[Desktop Entry]
+Type=Application
+Name=MultiSSH Manager
+GenericName=SSH Session Manager
+Comment=Tabbed SSH session manager with folders and multi-session broadcast
+Exec=multissh-manager %f
+Icon=multissh-manager
+Terminal=false
+Categories=System;Network;RemoteAccess;
+Keywords=ssh;terminal;putty;remote;broadcast;

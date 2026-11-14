@@ -1,0 +1,118 @@
+/*
+ * Default dark theme for MultiSSH Manager (GTK3 CSS).
+ * Graphite panels with a single teal accent; red is reserved for
+ * destructive actions and disconnected sessions.
+ */
+
+@define-color msm_bg        #12161c;
+@define-color msm_bg_alt    #181d25;
+@define-color msm_panel     #1e252f;
+@define-color msm_panel_hi  #283240;
+@define-color msm_border    #2f3a48;
+@define-color msm_fg        #e6edf3;
+@define-color msm_fg_dim    #8b98a8;
+@define-color msm_accent    #39c5bb;
+@define-color msm_accent_dk #1f6f6a;
+@define-color msm_ok        #4cc777;
+@define-color msm_warn      #e0b04a;
+@define-color msm_error     #e5534b;
+
+window, .background, dialog, .dialog {
+    background-color: @msm_bg;
+    color: @msm_fg;
+}
+
+menubar, menu, toolbar, statusbar, popover {
+    background-color: @msm_panel;
+    color: @msm_fg;
+}
+menu, popover { border: 1px solid @msm_border; }
+toolbar { border-bottom: 1px solid @msm_border; padding: 2px; }
+statusbar { border-top: 1px solid @msm_border; color: @msm_fg_dim; }
+
+menubar > menuitem:hover, menu menuitem:hover {
+    background-color: @msm_accent_dk;
+    color: @msm_fg;
+}
+
+treeview, treeview.view {
+    background-color: @msm_bg_alt;
+    color: @msm_fg;
+}
+treeview:selected, treeview.view:selected {
+    background-color: @msm_accent_dk;
+    color: #ffffff;
+}
+treeview.view:hover { background-color: @msm_panel_hi; }
+treeview.view.dnd { border: 1px solid @msm_accent; }
+
+notebook { background-color: @msm_bg; }
+notebook > header {
+    background-color: @msm_panel;
+    border-bottom: 1px solid @msm_border;
+}
+notebook > header tabs tab {
+    background-color: @msm_bg_alt;
+    color: @msm_fg_dim;
+    border: 1px solid @msm_border;
+    padding: 3px 8px;
+    min-height: 0;
+}
+notebook > header tabs tab:checked {
+    background-color: @msm_bg;
+    color: @msm_fg;
+    box-shadow: inset 0 -2px @msm_accent;
+}
+notebook > header tabs tab button { padding: 0; min-height: 0; min-width: 0; }
+notebook > header tabs tab button:hover { color: @msm_error; background: none; }
+
+entry, spinbutton, textview, textview text {
+    background-color: @msm_bg_alt;
+    color: @msm_fg;
+    border-color: @msm_border;
+    caret-color: @msm_accent;
+}
+entry:focus, spinbutton:focus { border-color: @msm_accent; }
+
+button {
+    background-image: none;
+    background-color: @msm_panel;
+    color: @msm_fg;
+    border: 1px solid @msm_border;
+    box-shadow: none;
+    text-shadow: none;
+}
+button:hover { background-color: @msm_panel_hi; }
+button:active, button:checked { background-color: @msm_accent_dk; color: #ffffff; }
+
+button.suggested-action {
+    background-color: @msm_accent;
+    border-color: @msm_accent;
+    color: #071816;
+    font-weight: bold;
+}
+button.suggested-action:hover { background-color: #4fd6cc; }
+button.destructive-action {
+    background-color: @msm_error;
+    border-color: @msm_error;
+    color: #ffffff;
+}
+
+scrolledwindow, viewport { background-color: @msm_bg; }
+separator { background-color: @msm_border; }
+label { color: @msm_fg; }
+
+infobar.warning > revealer > box { background-color: #3a2f16; color: @msm_fg; }
+infobar.error > revealer > box   { background-color: #3d1a1a; color: @msm_fg; }
+
+/* --- app-specific classes ------------------------------------------- */
+.msm-dim { color: @msm_fg_dim; }
+.msm-title { font-size: 20px; font-weight: bold; color: @msm_fg; }
+.msm-accent { color: @msm_accent; }
+.msm-broadcast-bar { background-color: @msm_panel; border-bottom: 1px solid @msm_border; }
+.msm-broadcast-live { background-color: #3a2f16; }
+.msm-tab-bcast { color: @msm_warn; }
+.msm-state-ok { color: @msm_ok; }
+.msm-state-wait { color: @msm_warn; }
+.msm-state-dead { color: @msm_error; }
+.msm-help-topics { background-color: @msm_panel; padding: 6px; }
