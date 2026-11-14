@@ -2,7 +2,7 @@
 
 Name:           multissh-manager
 Version:        %{app_version}
-Release:        2%{?dist}
+Release:        3%{?dist}
 Summary:        Tabbed SSH session manager with folders and multi-session broadcast
 
 License:        MIT
@@ -44,37 +44,26 @@ chmod 0755 %{buildroot}%{_bindir}/%{name}
 install -Dm0644 %{name}.desktop %{buildroot}%{_datadir}/applications/%{name}.desktop
 install -Dm0644 multissh_manager/resources/logo.svg \
     %{buildroot}%{_datadir}/icons/hicolor/scalable/apps/%{name}.svg
-install -Dm0644 about.conf.system %{buildroot}%{_sysconfdir}/%{name}/about.conf
-
-%pre
-# A 1.x install.sh run left an unowned about.conf; move it aside.
-if [ -f %{_sysconfdir}/%{name}/about.conf ] && \
-   grep -q "^version=1\." %{_sysconfdir}/%{name}/about.conf 2>/dev/null; then
-    mv %{_sysconfdir}/%{name}/about.conf %{_sysconfdir}/%{name}/about.conf.v1-backup || :
-fi
 
 %files
 %{_datadir}/%{name}/
 %{_bindir}/%{name}
 %{_datadir}/applications/%{name}.desktop
 %{_datadir}/icons/hicolor/scalable/apps/%{name}.svg
-%dir %{_sysconfdir}/%{name}
-%config(noreplace) %{_sysconfdir}/%{name}/about.conf
 %license LICENSE
 %doc README.md HELP.md
 
 %post
-# rpm decides before %pre runs, so a file moved aside there leaves the new
-# copy as .rpmnew; put it in place.
-if [ ! -e %{_sysconfdir}/%{name}/about.conf ] && [ -e %{_sysconfdir}/%{name}/about.conf.rpmnew ]; then
-    mv %{_sysconfdir}/%{name}/about.conf.rpmnew %{_sysconfdir}/%{name}/about.conf || :
-fi
 gtk-update-icon-cache -q %{_datadir}/icons/hicolor &>/dev/null || :
 
 %postun
 gtk-update-icon-cache -q %{_datadir}/icons/hicolor &>/dev/null || :
 
 %changelog
+* Sat Nov 14 2026 Mike Anderson <18270693+mike0615@users.noreply.github.com> - 2.0.0-3
+- About tab: author, project page and website links; content is fixed.
+- Drop the about.conf override files.
+
 * Sat Nov 14 2026 Mike <18270693+mike0615@users.noreply.github.com> - 2.0.0-2
 - Add MIT LICENSE file and license notice on the About tab.
 - Install about.conf correctly when upgrading over a 1.x install.sh setup.

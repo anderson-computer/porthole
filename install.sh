@@ -14,12 +14,11 @@ INSTALL_DIR="/opt/multissh-manager"
 BIN="/usr/local/bin/multissh-manager"
 DESKTOP="/usr/share/applications/multissh-manager.desktop"
 ICON="/usr/share/icons/hicolor/scalable/apps/multissh-manager.svg"
-CONFIG_DIR="/etc/multissh-manager"
 
 if [ "${1:-}" = "--uninstall" ]; then
     rm -rf "${INSTALL_DIR}" "${BIN}" "${DESKTOP}" "${ICON}"
     gtk-update-icon-cache -q /usr/share/icons/hicolor 2>/dev/null || true
-    echo "==> Removed. ${CONFIG_DIR} and ~/.config/multissh-manager were left in place."
+    echo "==> Removed. Your sessions in ~/.config/multissh-manager were left in place."
     exit 0
 fi
 
@@ -41,16 +40,5 @@ chmod 0755 "${BIN}"
 install -Dm0644 "${SRC}/multissh-manager.desktop" "${DESKTOP}"
 install -Dm0644 "${SRC}/multissh_manager/resources/logo.svg" "${ICON}"
 gtk-update-icon-cache -q /usr/share/icons/hicolor 2>/dev/null || true
-
-mkdir -p "${CONFIG_DIR}"
-# A 1.x install left its own about.conf here; move it aside so the
-# new defaults apply.
-if [ -f "${CONFIG_DIR}/about.conf" ] && grep -q "^version=1\." "${CONFIG_DIR}/about.conf"; then
-    mv "${CONFIG_DIR}/about.conf" "${CONFIG_DIR}/about.conf.v1-backup"
-    echo "==> Moved old ${CONFIG_DIR}/about.conf to about.conf.v1-backup"
-fi
-if [ ! -e "${CONFIG_DIR}/about.conf" ]; then
-    install -m0644 "${SRC}/packaging/about.conf.system" "${CONFIG_DIR}/about.conf"
-fi
 
 echo "==> Done. Launch from the applications menu, or run: multissh-manager"

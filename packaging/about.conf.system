@@ -1,9 +1,0 @@
-# System-wide override for the MultiSSH Manager About tab.
-# Uncomment and edit any line; anything left commented uses the package
-# default. Per-user overrides go in ~/.config/multissh-manager/about.conf.
-#app_name=MultiSSH Manager
-#author=
-#tagline=Tabbed SSH session manager for Linux
-#link_label=Project page
-#link_url=
-#logo_path=

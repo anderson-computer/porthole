@@ -63,9 +63,7 @@ python3 run.py [SESSION_FILE]
 
 Your `~/.config/multissh-manager/sessions.json` loads unchanged. If 1.x was
 installed with `install.sh`, remove it first (`sudo rm -rf
-/opt/multissh-manager /usr/local/bin/multissh-manager`). Either installer
-moves the old 1.x `/etc/multissh-manager/about.conf` to
-`about.conf.v1-backup`.
+/opt/multissh-manager /usr/local/bin/multissh-manager /etc/multissh-manager`).
 
 Shortcuts changed: Open, Save, and Close Tab are now Ctrl+Shift+O / S / W.
 
@@ -75,7 +73,6 @@ Shortcuts changed: Open, Save, and Close Tab are now Ctrl+Shift+O / S / W.
 |---|---|
 | `~/.config/multissh-manager/sessions.json` | Your session tree (auto-saved) |
 | `~/.config/multissh-manager/settings.json` | Preferences and window state |
-| `/etc/multissh-manager/about.conf` | Optional system-wide About tab text |
 
 ## Source layout
 
@@ -89,10 +86,10 @@ multissh_manager/
   importer.py               MultiPuTTY-family XML importer
   ssh_config.py             ~/.ssh/config importer
   settings.py               user preferences
-  about_config.py           layered about.conf loader
+  about_config.py           About tab content
   help_content.py           in-app help text (mirrored in HELP.md)
-  theme.py, resources/      dark GTK stylesheet, icon, default about.conf
-packaging/                  RPM spec, build script, /etc about.conf template
+  theme.py, resources/      dark GTK stylesheet and icon
+packaging/                  RPM spec and build script
 tests/                      unit tests (python3 -m unittest discover -s tests)
 ```
 
@@ -101,3 +98,5 @@ See [HELP.md](HELP.md) for the full usage guide.
 ## License
 
 MIT. See [LICENSE](LICENSE).
+
+Author: Mike Anderson — https://www.andersoncomputer.net

@@ -82,6 +82,3 @@ File ▸ Preferences sets the terminal font, scrollback length, theme (built-in 
 
 The first line of every tab shows the exact command being run. If a session closes immediately, read the error left in the tab, then try the same command in a normal terminal, adding -v for verbose output. Telnet hosts require the telnet package (dnf install telnet).
 
-## About tab
-
-Help ▸ About is configured by `about.conf` key=value files, each overriding the previous field by field: the bundled `multissh_manager/resources/about.conf`, then `/etc/multissh-manager/about.conf`, then `~/.config/multissh-manager/about.conf`. Fields: `app_name`, `author`, `tagline`, `link_label`, `link_url`, `logo_path`. The version always comes from the installed package.

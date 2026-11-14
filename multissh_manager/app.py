@@ -26,7 +26,7 @@ gi.require_version("GdkPixbuf", "2.0")
 from gi.repository import Gdk, GdkPixbuf, Gio, GLib, Gtk  # noqa: E402
 
 from . import __version__, importer, ssh_config, theme
-from .about_config import LICENSE_NOTICE, load_about_info
+from . import about_config as about
 from .dialogs import FolderDialog, HostDialog, PreferencesDialog, confirm, error
 from .help_content import HELP_TOPICS, OVERVIEW, SHORTCUTS
 from .models import Folder, Host, SessionStore
@@ -1006,31 +1006,27 @@ class MainWindow(Gtk.ApplicationWindow):
 
     def _open_about_tab(self):
         def build():
-            info = load_about_info()
             sw = Gtk.ScrolledWindow()
             box = Gtk.Box(orientation=Gtk.Orientation.VERTICAL, spacing=8, margin=32,
                           halign=Gtk.Align.CENTER, valign=Gtk.Align.START)
             try:
-                pix = GdkPixbuf.Pixbuf.new_from_file_at_scale(str(info.logo_file), 128, 128, True)
+                pix = GdkPixbuf.Pixbuf.new_from_file_at_scale(str(about.LOGO_FILE), 128, 128, True)
                 box.pack_start(Gtk.Image.new_from_pixbuf(pix), False, False, 0)
             except GLib.Error:
                 pass
-            name = Gtk.Label(label=info.app_name)
+            name = Gtk.Label(label=about.APP_NAME)
             name.get_style_context().add_class("msm-title")
             box.pack_start(name, False, False, 0)
-            ver = Gtk.Label(label=f"Version {info.version}")
+            ver = Gtk.Label(label=f"Version {about.VERSION}")
             ver.get_style_context().add_class("msm-dim")
             box.pack_start(ver, False, False, 0)
-            if info.tagline:
-                box.pack_start(Gtk.Label(label=info.tagline), False, False, 0)
-            if info.author:
-                a = Gtk.Label(label=f"By {info.author}")
-                a.get_style_context().add_class("msm-dim")
-                box.pack_start(a, False, False, 0)
-            if info.link_url:
-                box.pack_start(Gtk.LinkButton.new_with_label(info.link_url, info.link_label),
-                               False, False, 6)
-            lic = Gtk.Label(label=LICENSE_NOTICE, wrap=True, max_width_chars=72,
+            box.pack_start(Gtk.Label(label=about.TAGLINE), False, False, 0)
+            box.pack_start(Gtk.Label(label=f"Author: {about.AUTHOR}"), False, False, 4)
+            links = Gtk.Box(spacing=8, halign=Gtk.Align.CENTER)
+            for label, url in about.LINKS:
+                links.pack_start(Gtk.LinkButton.new_with_label(url, label), False, False, 0)
+            box.pack_start(links, False, False, 6)
+            lic = Gtk.Label(label=about.LICENSE_NOTICE, wrap=True, max_width_chars=72,
                             justify=Gtk.Justification.CENTER, selectable=True)
             lic.get_style_context().add_class("msm-dim")
             box.pack_start(lic, False, False, 16)
