@@ -1,8 +1,8 @@
-%{!?app_version: %global app_version 2.0.0}
+%{!?app_version: %global app_version 2.1.0}
 
 Name:           multissh-manager
 Version:        %{app_version}
-Release:        3%{?dist}
+Release:        1%{?dist}
 Summary:        Tabbed SSH session manager with folders and multi-session broadcast
 
 License:        MIT
@@ -60,6 +60,11 @@ gtk-update-icon-cache -q %{_datadir}/icons/hicolor &>/dev/null || :
 gtk-update-icon-cache -q %{_datadir}/icons/hicolor &>/dev/null || :
 
 %changelog
+* Sat Nov 14 2026 Mike Anderson <18270693+mike0615@users.noreply.github.com> - 2.1.0-1
+- Edit > Options (replaces File > Preferences): choose the session data
+  file location; optional append-only activity log with secret redaction.
+- Options are saved immediately and restored on restart.
+
 * Sat Nov 14 2026 Mike Anderson <18270693+mike0615@users.noreply.github.com> - 2.0.0-3
 - About tab: author, project page and website links; content is fixed.
 - Drop the about.conf override files.

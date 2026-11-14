@@ -13,7 +13,8 @@ gi.require_version("Gdk", "3.0")
 from gi.repository import Gtk, Pango  # noqa: E402
 
 from .models import AUTH_METHODS, PROTOCOLS, Folder, Host
-from .settings import Settings
+from .activity_log import default_log_path
+from .settings import Settings, default_data_path
 
 AUTH_LABELS = {
     "default": "Default (ssh config / agent / keys)",
@@ -221,16 +222,81 @@ class FolderDialog(Gtk.Dialog):
         return self.name_entry.get_text().strip() or "New Folder"
 
 
-class PreferencesDialog(Gtk.Dialog):
+class OptionsDialog(Gtk.Dialog):
+    """Edit > Options. Every value is written to settings.json on Apply."""
+
     def __init__(self, parent, settings: Settings):
-        super().__init__(title="Preferences", transient_for=parent, modal=True,
+        super().__init__(title="Options", transient_for=parent, modal=True,
                          destroy_with_parent=True)
+        self.set_default_size(560, -1)
         self.add_button("_Cancel", Gtk.ResponseType.CANCEL)
         ok = self.add_button("_Apply", Gtk.ResponseType.OK)
         ok.get_style_context().add_class("suggested-action")
-        grid = Gtk.Grid(column_spacing=10, row_spacing=8, margin=12)
-        self.get_content_area().add(grid)
+        self.set_default_response(Gtk.ResponseType.OK)
 
+        outer = Gtk.Box(orientation=Gtk.Orientation.VERTICAL, spacing=14, margin=14)
+        self.get_content_area().add(outer)
+
+        def section(title):
+            lbl = Gtk.Label(xalign=0)
+            lbl.set_markup(f"<b>{title}</b>")
+            outer.pack_start(lbl, False, False, 0)
+            grid = Gtk.Grid(column_spacing=10, row_spacing=8, margin_start=12)
+            outer.pack_start(grid, False, False, 0)
+            return grid
+
+        def note(text):
+            lbl = Gtk.Label(label=text, xalign=0, wrap=True, max_width_chars=70)
+            lbl.get_style_context().add_class("msm-dim")
+            return lbl
+
+        def path_row(grid, row, label, entry, browse_cb, reset_cb):
+            grid.attach(Gtk.Label(label=label, xalign=1), 0, row, 1, 1)
+            box = Gtk.Box(spacing=4)
+            entry.set_hexpand(True)
+            box.pack_start(entry, True, True, 0)
+            b = Gtk.Button.new_from_icon_name("document-open-symbolic", Gtk.IconSize.BUTTON)
+            b.set_tooltip_text("Choose location…")
+            b.connect("clicked", lambda _b: browse_cb())
+            box.pack_start(b, False, False, 0)
+            r = Gtk.Button.new_from_icon_name("edit-undo-symbolic", Gtk.IconSize.BUTTON)
+            r.set_tooltip_text("Reset to default")
+            r.connect("clicked", lambda _b: reset_cb())
+            box.pack_start(r, False, False, 0)
+            grid.attach(box, 1, row, 1, 1)
+
+        # --- Data file -------------------------------------------------
+        g = section("Session data file")
+        self.data_entry = Gtk.Entry(text=str(settings.data_path))
+        path_row(g, 0, "Location", self.data_entry,
+                 lambda: self._browse(self.data_entry, "Choose session data file",
+                                      "sessions.json", "*.json"),
+                 lambda: self.data_entry.set_text(str(default_data_path())))
+        g.attach(note("Your folders and hosts are saved here and loaded on startup. "
+                      "If you pick a file that already exists you'll be asked whether to "
+                      "open it or overwrite it with your current sessions."), 1, 1, 1, 1)
+
+        # --- Activity log ----------------------------------------------
+        g = section("Activity log")
+        self.log_check = Gtk.CheckButton(label="Append activity to a log file")
+        self.log_check.set_active(settings.log_enabled)
+        g.attach(self.log_check, 0, 0, 2, 1)
+        self.log_entry = Gtk.Entry(text=settings.log_file or str(default_log_path()))
+        path_row(g, 1, "Log file", self.log_entry,
+                 lambda: self._browse(self.log_entry, "Choose activity log file",
+                                      "activity.log", "*.log"),
+                 lambda: self.log_entry.set_text(str(default_log_path())))
+        g.attach(note("Logs sessions opened and closed, edits, imports, saves, broadcast "
+                      "commands and option changes. Never logs keystrokes typed into "
+                      "terminals, terminal output, or password values: secrets in "
+                      "commands are replaced with ***, and anything broadcast to a "
+                      "password prompt is not recorded."), 1, 2, 1, 1)
+        self.log_check.connect("toggled", lambda c: self._sync_log_sensitivity())
+        self._log_widgets = [w for w in g.get_children() if w is not self.log_check]
+        self._sync_log_sensitivity()
+
+        # --- Terminal & appearance --------------------------------------
+        g = section("Terminal")
         self.font_btn = Gtk.FontButton(font=settings.font)
         self.font_btn.set_filter_func(lambda fam, face: fam.is_monospace())
         self.scrollback = Gtk.SpinButton.new_with_range(0, 1000000, 1000)
@@ -242,29 +308,65 @@ class PreferencesDialog(Gtk.Dialog):
         self.idle = Gtk.SpinButton.new_with_range(200, 10000, 100)
         self.idle.set_value(settings.post_login_idle_ms)
         self.idle.set_tooltip_text(
-            "How long the terminal must be quiet after login before the "
+            "How long the terminal must be quiet at a shell prompt before the "
             "post-login command is sent.")
+        rows = [("Font", self.font_btn), ("Scrollback lines", self.scrollback),
+                ("Theme", self.theme), ("Post-login delay (ms)", self.idle)]
+        for i, (label, w) in enumerate(rows):
+            g.attach(Gtk.Label(label=label, xalign=1), 0, i, 1, 1)
+            w.set_halign(Gtk.Align.START)
+            g.attach(w, 1, i, 1, 1)
         self.confirm = Gtk.CheckButton(label="Confirm before closing a connected tab")
         self.confirm.set_active(settings.confirm_close_connected)
         self.restore = Gtk.CheckButton(label="Reopen last session's tabs on startup")
         self.restore.set_active(settings.restore_tabs)
-
-        rows = [("Terminal font", self.font_btn), ("Scrollback lines", self.scrollback),
-                ("Theme", self.theme), ("Post-login delay (ms)", self.idle)]
-        for i, (label, w) in enumerate(rows):
-            grid.attach(Gtk.Label(label=label, xalign=1), 0, i, 1, 1)
-            grid.attach(w, 1, i, 1, 1)
-        grid.attach(self.confirm, 0, len(rows), 2, 1)
-        grid.attach(self.restore, 0, len(rows) + 1, 2, 1)
+        g.attach(self.confirm, 0, len(rows), 2, 1)
+        g.attach(self.restore, 0, len(rows) + 1, 2, 1)
         self.show_all()
 
+    def _sync_log_sensitivity(self):
+        for w in self._log_widgets:
+            w.set_sensitive(self.log_check.get_active())
+
+    def _browse(self, entry, title, default_name, pattern):
+        dialog = Gtk.FileChooserNative.new(title, self, Gtk.FileChooserAction.SAVE,
+                                           "_Select", "_Cancel")
+        current = Path(entry.get_text()).expanduser()
+        if current.parent.is_dir():
+            dialog.set_current_folder(str(current.parent))
+        dialog.set_current_name(current.name or default_name)
+        f = Gtk.FileFilter()
+        f.add_pattern(pattern)
+        f.set_name(pattern)
+        dialog.add_filter(f)
+        any_f = Gtk.FileFilter()
+        any_f.add_pattern("*")
+        any_f.set_name("All files")
+        dialog.add_filter(any_f)
+        if dialog.run() == Gtk.ResponseType.ACCEPT:
+            entry.set_text(dialog.get_filename())
+        dialog.destroy()
+
+    def data_path(self) -> Path:
+        text = self.data_entry.get_text().strip()
+        return Path(text).expanduser() if text else default_data_path()
+
+    def log_path(self) -> Path:
+        text = self.log_entry.get_text().strip()
+        return Path(text).expanduser() if text else default_log_path()
+
     def apply_to(self, s: Settings) -> None:
+        """Copy everything except the data file (the caller handles moving
+        or opening that)."""
         s.font = self.font_btn.get_font()
         s.scrollback_lines = int(self.scrollback.get_value())
         s.theme = self.theme.get_active_id() or "dark"
         s.post_login_idle_ms = int(self.idle.get_value())
         s.confirm_close_connected = self.confirm.get_active()
         s.restore_tabs = self.restore.get_active()
+        s.log_enabled = self.log_check.get_active()
+        lp = self.log_path()
+        s.log_file = "" if lp == default_log_path() else str(lp)
 
 
 def confirm(parent, text: str, secondary: str = "", ok_label: str = "_OK",

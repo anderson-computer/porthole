@@ -29,8 +29,10 @@ and known_hosts all behave exactly as they do in a normal shell.
   and `0600` permissions.
 - **Terminal-friendly shortcuts.** App shortcuts use Ctrl+Shift, so Ctrl+W,
   Ctrl+O, and Ctrl+S still reach the shell (unlike 1.x).
-- Preferences for font, scrollback, theme (built-in dark or system), and
-  reopening last session's tabs.
+- **Edit ▸ Options**: choose where the session data file lives, turn on an
+  append-only **activity log** (secrets filtered out, never records terminal
+  keystrokes or output), plus font, scrollback, theme, and tab restore. All
+  options persist across restarts.
 
 ## Install (Rocky Linux 9 / 10, works offline)
 
@@ -71,8 +73,9 @@ Shortcuts changed: Open, Save, and Close Tab are now Ctrl+Shift+O / S / W.
 
 | Path | Purpose |
 |---|---|
-| `~/.config/multissh-manager/sessions.json` | Your session tree (auto-saved) |
-| `~/.config/multissh-manager/settings.json` | Preferences and window state |
+| `~/.config/multissh-manager/sessions.json` | Your session tree (auto-saved; location changeable in Options) |
+| `~/.config/multissh-manager/settings.json` | Options and window state |
+| `~/.local/state/multissh-manager/activity.log` | Activity log, when enabled (location changeable) |
 
 ## Source layout
 
@@ -85,7 +88,8 @@ multissh_manager/
   models.py                 Host / Folder / SessionStore, ssh argv, atomic save
   importer.py               MultiPuTTY-family XML importer
   ssh_config.py             ~/.ssh/config importer
-  settings.py               user preferences
+  settings.py               options (settings.json)
+  activity_log.py           optional activity log + secret redaction
   about_config.py           About tab content
   help_content.py           in-app help text (mirrored in HELP.md)
   theme.py, resources/      dark GTK stylesheet and icon

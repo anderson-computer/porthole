@@ -4,9 +4,15 @@ from __future__ import annotations
 
 import json
 from dataclasses import asdict, dataclass, field
-from typing import List
+from pathlib import Path
+from typing import List, Optional
 
 from .models import atomic_write, config_dir
+
+
+def default_data_path() -> Path:
+    return config_dir() / "sessions.json"
+
 
 SETTINGS_FILE = config_dir() / "settings.json"
 
@@ -23,6 +29,13 @@ class Settings:
     window_width: int = 1200
     window_height: int = 760
     sidebar_width: int = 300
+    data_file: str = ""                  # "" = ~/.config/multissh-manager/sessions.json
+    log_enabled: bool = False
+    log_file: str = ""                   # "" = ~/.local/state/multissh-manager/activity.log
+
+    @property
+    def data_path(self) -> Path:
+        return Path(self.data_file).expanduser() if self.data_file else default_data_path()
 
     @staticmethod
     def load() -> "Settings":
@@ -36,8 +49,10 @@ class Settings:
                 setattr(s, k, v)
         return s
 
-    def save(self) -> None:
+    def save(self) -> Optional[str]:
+        """Write settings to disk. Returns an error message on failure."""
         try:
             atomic_write(SETTINGS_FILE, json.dumps(asdict(self), indent=2), backup=False)
-        except OSError:
-            pass
+        except OSError as e:
+            return f"Could not save options to {SETTINGS_FILE}: {e.strerror or e}"
+        return None

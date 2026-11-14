@@ -13,6 +13,7 @@ gi.require_version("Gdk", "3.0")
 gi.require_version("Vte", "2.91")
 from gi.repository import Gdk, GLib, GObject, Gtk, Pango, Vte  # noqa: E402
 
+from .activity_log import activity, redact
 from .models import Host
 from .settings import Settings
 
@@ -25,6 +26,10 @@ _STATE_CLASS = {
     STATE_CONNECTED: "msm-state-ok",
     STATE_CLOSED: "msm-state-dead",
 }
+
+
+SECRET_PROMPT_WORDS = ("password", "passphrase", "passcode", "verification", "code:",
+                       "token", "pin:", "pin for", "otp", "secret")
 
 
 class TerminalTab(Gtk.Box):
@@ -131,6 +136,8 @@ class TerminalTab(Gtk.Box):
             return
         self._set_state(STATE_CONNECTING)
         self.infobar.hide()
+        activity.log("session", "connect", host=self.host.name, target=self.host.target,
+                     command=redact(self.host.command_preview()))
         self._post_login_pending = bool(self.host.post_login_command.strip())
         self.terminal.feed(
             f"\x1b[2m$ {self.host.command_preview()}\x1b[0m\r\n".encode("utf-8"))
@@ -155,6 +162,7 @@ class TerminalTab(Gtk.Box):
                 self._set_closed(f"Could not start session: {e.message}")
 
     def reconnect(self) -> None:
+        activity.log("session", "reconnect", host=self.host.name)
         if self.alive and self.pid:
             try:
                 os.kill(self.pid, 15)
@@ -209,6 +217,7 @@ class TerminalTab(Gtk.Box):
         self.emit("session-state-changed")
 
     def _set_closed(self, message: str) -> None:
+        activity.log("session", "ended", host=self.host.name, detail=message)
         self.pid = None
         self._cancel_post_login()
         self._set_state(STATE_CLOSED)
@@ -256,6 +265,7 @@ class TerminalTab(Gtk.Box):
     def _on_contents_changed(self, _term) -> None:
         if self.state == STATE_CONNECTING:
             self._set_state(STATE_CONNECTED)
+            activity.log("session", "connected", host=self.host.name)
         if self._post_login_pending:
             # Wait until output goes quiet (banner/MOTD/prompt finished).
             if self._post_login_timer:
@@ -273,13 +283,18 @@ class TerminalTab(Gtk.Box):
         lines = [ln.rstrip() for ln in (text or "").splitlines() if ln.strip()]
         return lines[-1] if lines else ""
 
+    def at_secret_prompt(self) -> bool:
+        """True when the terminal is waiting for a password, passphrase,
+        PIN or one-time code."""
+        lower = self._last_line().lower()
+        return any(w in lower for w in SECRET_PROMPT_WORDS)
+
     def _at_shell_prompt(self) -> bool:
         """True when the last line looks like a shell prompt rather than a
         host-key, password, passphrase or MFA question."""
         line = self._last_line()
         lower = line.lower()
-        if any(w in lower for w in ("password", "passphrase", "yes/no", "verification",
-                                    "code:", "token", "fingerprint")):
+        if self.at_secret_prompt() or any(w in lower for w in ("yes/no", "fingerprint")):
             return False
         return line.endswith(("$", "#", ">", "%", "]"))
 
@@ -287,9 +302,11 @@ class TerminalTab(Gtk.Box):
         self._post_login_timer = 0
         if self._post_login_pending and self.alive and self._at_shell_prompt():
             self._post_login_pending = False
-            for line in self.host.post_login_command.splitlines():
-                if line.strip():
-                    self.send_line(line)
+            lines = [ln for ln in self.host.post_login_command.splitlines() if ln.strip()]
+            for line in lines:
+                self.send_line(line)
+            activity.log("session", "post-login", host=self.host.name,
+                         commands=redact(" ; ".join(lines)))
         return False
 
     def _cancel_post_login(self) -> None:

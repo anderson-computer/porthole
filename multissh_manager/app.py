@@ -27,10 +27,11 @@ from gi.repository import Gdk, GdkPixbuf, Gio, GLib, Gtk  # noqa: E402
 
 from . import __version__, importer, ssh_config, theme
 from . import about_config as about
-from .dialogs import FolderDialog, HostDialog, PreferencesDialog, confirm, error
+from .activity_log import activity, redact
+from .dialogs import FolderDialog, HostDialog, OptionsDialog, confirm, error
 from .help_content import HELP_TOPICS, OVERVIEW, SHORTCUTS
 from .models import Folder, Host, SessionStore
-from .settings import Settings
+from .settings import Settings, default_data_path
 from .terminal_tab import TerminalTab
 
 APP_ID = "us.andersoncomputer.MultiSSHManager"
@@ -60,6 +61,32 @@ ACCELS = {
     "win.help": ["F1"],
     "app.quit": ["<Primary><Shift>q"],
 }
+
+
+_SAFE_HOST_FIELDS = ("name", "hostname", "port", "username", "protocol", "auth_method",
+                     "private_key_path", "jump_host")
+
+
+def describe_host_changes(before: dict, after: dict) -> str:
+    """Summarize edited host fields for the activity log. Free-text fields
+    that may hold secrets are reported as changed without their values."""
+    parts = []
+    for key in Host.__dataclass_fields__:
+        if key == "id" or before.get(key) == after.get(key):
+            continue
+        if key in _SAFE_HOST_FIELDS:
+            parts.append(f"{key}: {before.get(key)!r} -> {after.get(key)!r}")
+        else:
+            parts.append(f"{key}: (changed)")
+    return "; ".join(parts) or "no changes"
+
+
+def _options_snapshot(s: Settings) -> dict:
+    return {"data_file": str(s.data_path), "log_enabled": s.log_enabled,
+            "log_file": s.log_file, "font": s.font, "scrollback_lines": s.scrollback_lines,
+            "theme": s.theme, "post_login_idle_ms": s.post_login_idle_ms,
+            "confirm_close_connected": s.confirm_close_connected,
+            "restore_tabs": s.restore_tabs}
 
 
 class MainWindow(Gtk.ApplicationWindow):
@@ -130,7 +157,7 @@ class MainWindow(Gtk.ApplicationWindow):
             "zoom-in": lambda: self._with_tab(lambda t: t.zoom(1.1)),
             "zoom-out": lambda: self._with_tab(lambda t: t.zoom(1 / 1.1)),
             "zoom-reset": lambda: self._with_tab(lambda t: t.zoom(None)),
-            "preferences": self._on_preferences,
+            "options": self._on_options,
             "help": self._open_help_tab,
             "about": self._open_about_tab,
         }
@@ -171,7 +198,7 @@ class MainWindow(Gtk.ApplicationWindow):
         file_menu.append_section(None, section(
             ("_Save", "win.save"), ("Save _As…", "win.save-as")))
         file_menu.append_section(None, section(
-            ("_Preferences", "win.preferences"), ("_Quit", "app.quit")))
+            ("_Quit", "app.quit"),))
         menubar.append_submenu("_File", file_menu)
 
         edit_menu = Gio.Menu()
@@ -184,6 +211,7 @@ class MainWindow(Gtk.ApplicationWindow):
             ("Sort _Alphabetically", "win.sort"), ("_Find Host", "win.find")))
         edit_menu.append_section(None, section(
             ("_Copy", "win.copy"), ("_Paste", "win.paste")))
+        edit_menu.append_section(None, section(("_Options…", "win.options"),))
         menubar.append_submenu("_Edit", edit_menu)
 
         sess = Gio.Menu()
@@ -376,7 +404,7 @@ class MainWindow(Gtk.ApplicationWindow):
     # Store loading / persistence
     # ================================================================
     def _load_initial_store(self):
-        path = SessionStore.default_path()
+        path = self.settings.data_path
         self.store_path = path
         if path.exists():
             try:
@@ -385,6 +413,7 @@ class MainWindow(Gtk.ApplicationWindow):
                 self.store_path = None
                 error(self, "Could not load your saved sessions",
                       f"{path}\n\n{e}\n\nA backup may exist at {path}.bak")
+                activity.log("file", "load-failed", path=path, error=e)
         self._refresh_tree()
         self._update_title()
 
@@ -397,13 +426,17 @@ class MainWindow(Gtk.ApplicationWindow):
                 self.store_path = None
                 self.dirty = True
                 self._status(f"Opened {Path(path).name} — use Save As to keep a native copy.")
+                activity.log("file", "open-xml", path=path, hosts=root.count()[1])
             else:
                 self.session_store = SessionStore.load(Path(path))
                 self.store_path = Path(path)
                 self.dirty = False
                 self._status(f"Opened {path}")
+                activity.log("file", "open", path=path,
+                             hosts=self.session_store.root.count()[1])
         except Exception as e:
             error(self, f"Could not open {Path(path).name}", str(e))
+            activity.log("file", "open-failed", path=path, error=e)
             return
         self.collapsed.clear()
         self._refresh_tree()
@@ -419,6 +452,7 @@ class MainWindow(Gtk.ApplicationWindow):
             except OSError as e:
                 self.dirty = True
                 self._status(f"Auto-save failed: {e}")
+                activity.log("file", "autosave-failed", path=self.store_path, error=e)
         else:
             self.dirty = True
         self._update_title()
@@ -476,6 +510,7 @@ class MainWindow(Gtk.ApplicationWindow):
         self._refresh_tree()
         self._update_title()
         self._status("New empty session store.")
+        activity.log("file", "new-store")
 
     def _on_open(self):
         if not self._maybe_save_before("opening another file"):
@@ -498,6 +533,7 @@ class MainWindow(Gtk.ApplicationWindow):
         self._changed()
         _, n = imported.count()
         self._status(f"Imported {n} host(s) from {Path(path).name}.")
+        activity.log("file", "import-xml", path=path, hosts=n)
 
     def _on_import_ssh_config(self):
         path = Path.home() / ".ssh" / "config"
@@ -513,6 +549,7 @@ class MainWindow(Gtk.ApplicationWindow):
         self.session_store.merge(folder)
         self._changed()
         self._status(f"Imported {len(folder.hosts)} host(s) from ~/.ssh/config.")
+        activity.log("file", "import-ssh-config", path=path, hosts=len(folder.hosts))
 
     def _on_save(self) -> bool:
         if not self.store_path:
@@ -521,10 +558,12 @@ class MainWindow(Gtk.ApplicationWindow):
             self.session_store.save(self.store_path)
         except OSError as e:
             error(self, "Save failed", str(e))
+            activity.log("file", "save-failed", path=self.store_path, error=e)
             return False
         self.dirty = False
         self._update_title()
         self._status(f"Saved {self.store_path}")
+        activity.log("file", "save", path=self.store_path)
         return True
 
     def _on_save_as(self) -> bool:
@@ -625,6 +664,7 @@ class MainWindow(Gtk.ApplicationWindow):
         d = FolderDialog(self)
         if d.run() == Gtk.ResponseType.OK:
             parent.folders.append(Folder(name=d.get_name()))
+            activity.log("tree", "add-folder", name=d.get_name(), parent=parent.name)
             self.collapsed.discard(parent.id)
             self._changed()
         d.destroy()
@@ -633,7 +673,10 @@ class MainWindow(Gtk.ApplicationWindow):
         parent = self._target_folder()
         d = HostDialog(self)
         if d.run() == Gtk.ResponseType.OK:
-            parent.hosts.append(d.get_host())
+            host = d.get_host()
+            parent.hosts.append(host)
+            activity.log("tree", "add-host", name=host.name, target=host.target,
+                         port=host.port, protocol=host.protocol, folder=parent.name)
             self.collapsed.discard(parent.id)
             self._changed()
         d.destroy()
@@ -646,9 +689,15 @@ class MainWindow(Gtk.ApplicationWindow):
         d = FolderDialog(self, node) if kind == "folder" else HostDialog(self, node)
         if d.run() == Gtk.ResponseType.OK:
             if kind == "folder":
+                old_name = node.name
                 node.name = d.get_name()
+                if old_name != node.name:
+                    activity.log("tree", "rename-folder", old=old_name, new=node.name)
             else:
+                before = node.to_dict()
                 d.get_host()
+                activity.log("tree", "edit-host", name=node.name,
+                             changes=describe_host_changes(before, node.to_dict()))
                 for tab in self._tabs():
                     if tab.host is node:
                         tab.name_label.set_text(node.name)
@@ -664,6 +713,7 @@ class MainWindow(Gtk.ApplicationWindow):
             parent = root.parent_of(node.id) or root
             copy = node.clone()
             parent.hosts.insert(parent.hosts.index(node) + 1, copy)
+            activity.log("tree", "duplicate-host", source=node.name, name=copy.name)
             added += 1
         if added:
             self._changed()
@@ -682,12 +732,15 @@ class MainWindow(Gtk.ApplicationWindow):
         for kind, node in nodes:
             if kind == "folder":
                 root.remove_folder(node.id)
+                activity.log("tree", "delete-folder", name=node.name, hosts=node.count()[1])
             else:
                 root.remove_host(node.id)
+                activity.log("tree", "delete-host", name=node.name, target=node.target)
         self._changed()
 
     def _sort_tree(self):
         self.session_store.root.sort()
+        activity.log("tree", "sort")
         self._changed()
 
     def _on_row_activated(self, tv, path, _col):
@@ -775,6 +828,9 @@ class MainWindow(Gtk.ApplicationWindow):
         for nid in ids:
             if nid and root.move(nid, dest_folder.id, index):
                 moved += 1
+                node = root.find_folder(nid) or root.find_host(nid)
+                activity.log("tree", "move", name=node.name if node else nid,
+                             to=dest_folder.name if dest_folder is not root else "(top level)")
                 if index >= 0:
                     index += 1
         Gtk.drag_finish(ctx, moved > 0, False, time)
@@ -848,6 +904,7 @@ class MainWindow(Gtk.ApplicationWindow):
                            "The session is still connected and will be terminated.",
                            "_Close", destructive=True):
                 return False
+        activity.log("session", "close-tab", host=tab.host.name, state=tab.state)
         tab.terminate()
         n = self.notebook.page_num(tab)
         if n != -1:
@@ -901,8 +958,17 @@ class MainWindow(Gtk.ApplicationWindow):
         if not targets:
             self._status("No connected tabs are ticked for broadcast.")
             return
+        hidden = [t.host.name for t in targets if t.at_secret_prompt()]
         for t in targets:
             t.send_line(text)
+        names = ", ".join(t.host.name for t in targets)
+        if hidden:
+            activity.log("broadcast", "send", tabs=len(targets), hosts=names,
+                         command="[not recorded: sent at a password prompt on "
+                                 + ", ".join(hidden) + "]")
+        else:
+            activity.log("broadcast", "send", tabs=len(targets), hosts=names,
+                         command=redact(text) if text else "[Enter]")
         if text and (not self._history or self._history[-1] != text):
             self._history.append(text)
         self._history_pos = len(self._history)
@@ -925,9 +991,12 @@ class MainWindow(Gtk.ApplicationWindow):
         if value.get_boolean():
             ctx.add_class("msm-broadcast-live")
             self._status("Live typing ON: keystrokes in the active tab go to every ticked tab.")
+            activity.log("broadcast", "live-typing-on",
+                         tabs=", ".join(t.host.name for t in self._targets()))
         else:
             ctx.remove_class("msm-broadcast-live")
             self._status("Live typing off.")
+            activity.log("broadcast", "live-typing-off")
 
     def _on_tab_user_input(self, source: TerminalTab, text: str):
         if not self.live_action.get_state().get_boolean() or not source.broadcast:
@@ -1036,17 +1105,100 @@ class MainWindow(Gtk.ApplicationWindow):
         self._special_tab("about", "About", build)
 
     # ================================================================
-    # Preferences, status, shutdown
+    # Options, status, shutdown
     # ================================================================
-    def _on_preferences(self):
-        d = PreferencesDialog(self, self.settings)
-        if d.run() == Gtk.ResponseType.OK:
-            d.apply_to(self.settings)
-            self.settings.save()
-            theme.apply_theme(self.settings.theme)
-            for t in self._tabs():
-                t.apply_settings(self.settings)
+    def _on_options(self):
+        d = OptionsDialog(self, self.settings)
+        while True:
+            if d.run() != Gtk.ResponseType.OK:
+                d.destroy()
+                return
+            new_data = d.data_path()
+            if new_data.is_dir():
+                error(self, "Choose a file, not a folder", str(new_data))
+                continue
+            break
+        before = _options_snapshot(self.settings)
+        old_data = self.settings.data_path
+        d.apply_to(self.settings)
         d.destroy()
+
+        # Turn logging off/on/move with a record in the right file.
+        log_changed = (before["log_enabled"], before["log_file"]) != \
+            (self.settings.log_enabled, self.settings.log_file)
+        if log_changed:
+            if activity.enabled:
+                activity.log("options", "activity-log-off" if not self.settings.log_enabled
+                             else "activity-log-moved", to=self.settings.log_file or "default")
+            err = activity.configure(self.settings.log_enabled, self.settings.log_file)
+            if err:
+                self.settings.log_enabled = False
+                error(self, "Activity log not enabled", err)
+            elif self.settings.log_enabled:
+                activity.log("options", "activity-log-on", path=activity.path,
+                             version=__version__)
+
+        if new_data != old_data and self._change_data_file(old_data, new_data):
+            self.settings.data_file = "" if new_data == default_data_path() else str(new_data)
+
+        after = _options_snapshot(self.settings)
+        changed = {k: v for k, v in after.items()
+                   if before.get(k) != v and not k.startswith("log_")}
+        if changed:
+            activity.log("options", "changed", **changed)
+
+        err = self.settings.save()
+        if err:
+            error(self, "Options were applied but not saved", err)
+        else:
+            self._status("Options saved.")
+        theme.apply_theme(self.settings.theme)
+        for t in self._tabs():
+            t.apply_settings(self.settings)
+
+    def _change_data_file(self, old: Path, new: Path) -> bool:
+        """Point the default session file at `new`. Returns False if the
+        user cancelled or it failed (the old location stays in effect)."""
+        if new.exists():
+            dlg = Gtk.MessageDialog(transient_for=self, modal=True,
+                                    message_type=Gtk.MessageType.QUESTION,
+                                    buttons=Gtk.ButtonsType.NONE,
+                                    text="A session file already exists there")
+            dlg.format_secondary_text(
+                f"{new}\n\nOpen the sessions in that file, or overwrite it with the "
+                "sessions you have now? (The old file is kept as a .bak copy.)")
+            dlg.add_button("_Cancel", Gtk.ResponseType.CANCEL)
+            dlg.add_button("_Overwrite", 2).get_style_context().add_class("destructive-action")
+            dlg.add_button("Open _It", 1).get_style_context().add_class("suggested-action")
+            resp = dlg.run()
+            dlg.destroy()
+            if resp == 1:
+                try:
+                    store = SessionStore.load(new)
+                except Exception as e:
+                    error(self, f"Could not open {new.name}", str(e))
+                    return False
+                self.session_store = store
+                self.collapsed.clear()
+                activity.log("file", "data-file-changed", old=old, new=new, action="opened")
+            elif resp != 2:
+                return False
+            else:
+                activity.log("file", "data-file-changed", old=old, new=new,
+                             action="overwritten")
+        else:
+            activity.log("file", "data-file-changed", old=old, new=new, action="created")
+        self.store_path = new
+        try:
+            self.session_store.save(new)
+        except OSError as e:
+            error(self, "Could not write the session file", f"{new}\n\n{e}")
+            self.store_path = old if old.exists() else None
+            return False
+        self.dirty = False
+        self._refresh_tree()
+        self._update_title()
+        return True
 
     def _status(self, text: str):
         self.statusbar.pop(self.status_ctx)
@@ -1082,6 +1234,7 @@ class MainWindow(Gtk.ApplicationWindow):
         self.settings.sidebar_width = self.paned.get_position()
         self.settings.last_open_host_ids = [t.host.id for t in self._tabs()]
         self.settings.save()
+        activity.log("app", "quit", open_tabs=len(self._tabs()))
         for t in self._tabs():
             t.terminate()
         return True
@@ -1097,6 +1250,8 @@ class Application(Gtk.Application):
         Gtk.Application.do_startup(self)
         GLib.set_application_name(APP_TITLE)
         theme.apply_theme(self.settings.theme)
+        self._log_error = activity.configure(self.settings.log_enabled, self.settings.log_file)
+        activity.log("app", "start", version=__version__, data_file=self.settings.data_path)
         quit_action = Gio.SimpleAction.new("quit", None)
         quit_action.connect("activate", self._on_quit)
         self.add_action(quit_action)
@@ -1108,6 +1263,8 @@ class Application(Gtk.Application):
         win = self.props.active_window
         if not win:
             win = MainWindow(self, self.open_path)
+            if self._log_error:
+                win._status(self._log_error)
         win.show_all()
         win._update_status()
         win.present()

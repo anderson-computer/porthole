@@ -60,7 +60,7 @@ Live typing (Ctrl+Shift+L): every keystroke typed into a ticked tab is also sent
 
 ## Post-login commands
 
-Lines in a host's Post-login field are sent once the session has printed its banner/MOTD and gone quiet (700 ms by default; change it in Preferences). Each line is sent as a separate command.
+Lines in a host's Post-login field are sent once the session has printed its banner/MOTD and gone quiet (700 ms by default; change it in Edit ▸ Options). Each line is sent as a separate command.
 
 ## Importing sessions
 
@@ -74,11 +74,24 @@ MultiPuTTY's XML schema isn't published, so the importer matches attributes by n
 
 Every change is written to the current session file immediately (atomically, with the previous version kept as .bak). The default file is ~/.config/multissh-manager/sessions.json. A tree opened from XML or created with File ▸ New isn't tied to a file until you Save As; the title bar shows • while there are unsaved changes and you'll be asked before quitting.
 
-## Preferences
+## Options
 
-File ▸ Preferences sets the terminal font, scrollback length, theme (built-in dark or your system GTK theme), post-login delay, whether closing a connected tab asks first, and whether to reopen the last session's tabs on startup. Stored in ~/.config/multissh-manager/settings.json.
+Edit ▸ Options holds every setting; all of them are saved to ~/.config/multissh-manager/settings.json as soon as you click Apply and are restored the next time the app starts.
+
+Session data file — where your folders and hosts are stored and loaded from at startup (default ~/.config/multissh-manager/sessions.json). Pick a new location to move your sessions there; if a file already exists at that location you can open it or overwrite it with your current sessions. The previous file is left in place.
+
+Activity log — when enabled, one line per event is appended to the log file (default ~/.local/state/multissh-manager/activity.log, readable only by you).
+
+Terminal — font, scrollback length, theme, post-login delay, whether closing a connected tab asks first, and whether to reopen the last session's tabs on startup.
+
+## Activity log
+
+Recorded: app start and quit; sessions connecting, connected, ended (with exit status), reconnected and closed, with the ssh command used; post-login commands sent; broadcast commands and the tabs they went to; live typing switched on or off; hosts and folders added, edited (which fields changed), duplicated, moved or deleted; files opened, saved and imported; option changes.
+
+Never recorded: anything typed directly into a terminal (including everything sent by live typing), terminal output, and secret values. Commands are passed through a filter that replaces passwords, tokens, API keys, sshpass/mysql -p values, credentials in URLs and similar with ***. A broadcast sent while any target tab is at a password, passphrase or one-time-code prompt is logged without its text. Notes, post-login text and extra ssh args are only logged as "changed" when you edit a host.
+
+Filtering is pattern-based, so avoid putting secrets on the command line where you can; type them at the prompt instead.
 
 ## Troubleshooting connections
 
 The first line of every tab shows the exact command being run. If a session closes immediately, read the error left in the tab, then try the same command in a normal terminal, adding -v for verbose output. Telnet hosts require the telnet package (dnf install telnet).
-
