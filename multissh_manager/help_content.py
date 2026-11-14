@@ -123,9 +123,31 @@ HELP_TOPICS: List[Tuple[str, str]] = [
         "Activity log — when enabled, one line per event is appended to the "
         "log file (default ~/.local/state/multissh-manager/activity.log, "
         "readable only by you).\n\n"
+        "Passwords — where saved passwords are kept (see Saved passwords).\n\n"
         "Terminal — font, scrollback length, theme, post-login delay, whether "
         "closing a connected tab asks first, and whether to reopen the last "
         "session's tabs on startup.",
+    ),
+    (
+        "Saved passwords",
+        "Choose where passwords are kept in Edit ▸ Options ▸ Passwords:\n"
+        "  • System keychain — your login keyring (GNOME Keyring / Secret "
+        "Service). Unlocked when you log in; no extra password.\n"
+        "  • Encrypted vault — a file encrypted with AES-256-GCM using a key "
+        "derived from a master password (scrypt). Works on any machine, "
+        "including headless or airgapped ones. You enter the master password "
+        "once per session; Edit ▸ Lock Password Vault locks it again.\n\n"
+        "To save a password, type it in the host's Password field with Save "
+        "ticked, or tick \"Save password\" when ssh asks for it. Untick Save "
+        "to forget it. Deleting a host deletes its saved password.\n\n"
+        "For hosts with a saved password, ssh asks the app instead of the "
+        "terminal (through SSH_ASKPASS and a private socket readable only by "
+        "you). The saved password is supplied once; if the server rejects it, "
+        "or ssh asks anything else (new host key, passphrase, one-time code, "
+        "jump host password), a dialog appears. Passwords never appear in the "
+        "terminal, the session file, the command line, or the activity log.\n\n"
+        "Switching storage in Options offers to move your saved passwords to "
+        "the new store.",
     ),
     (
         "Activity log",

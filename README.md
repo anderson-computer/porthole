@@ -29,6 +29,11 @@ and known_hosts all behave exactly as they do in a normal shell.
   and `0600` permissions.
 - **Terminal-friendly shortcuts.** App shortcuts use Ctrl+Shift, so Ctrl+W,
   Ctrl+O, and Ctrl+S still reach the shell (unlike 1.x).
+- **Saved passwords** in your login keychain (GNOME Keyring / Secret
+  Service) or an AES-256 encrypted vault file with a master password, which
+  works offline and on machines without a keyring. ssh gets the password
+  through `SSH_ASKPASS` and a private socket, so it is never typed into the
+  terminal, written to the session file, or logged.
 - **Edit ▸ Options**: choose where the session data file lives, turn on an
   append-only **activity log** (secrets filtered out, never records terminal
   keystrokes or output), plus font, scrollback, theme, and tab restore. All
@@ -37,7 +42,8 @@ and known_hosts all behave exactly as they do in a normal shell.
 ## Install (Rocky Linux 9 / 10, works offline)
 
 All runtime dependencies (`python3`, `python3-gobject`, `gtk3`, `vte291`,
-`openssh-clients`) are in the stock AppStream repo. You don't need EPEL or pip.
+`openssh-clients`, `python3-cryptography`, `libsecret`) are in the stock
+BaseOS/AppStream repos. You don't need EPEL or pip.
 
 ### RPM (recommended)
 
@@ -57,7 +63,7 @@ sudo ./install.sh --uninstall
 ### From source
 
 ```bash
-sudo dnf install -y python3-gobject gtk3 vte291 openssh-clients
+sudo dnf install -y python3-gobject gtk3 vte291 openssh-clients python3-cryptography libsecret
 python3 run.py [SESSION_FILE]
 ```
 
@@ -76,6 +82,7 @@ Shortcuts changed: Open, Save, and Close Tab are now Ctrl+Shift+O / S / W.
 | `~/.config/multissh-manager/sessions.json` | Your session tree (auto-saved; location changeable in Options) |
 | `~/.config/multissh-manager/settings.json` | Options and window state |
 | `~/.local/state/multissh-manager/activity.log` | Activity log, when enabled (location changeable) |
+| `~/.config/multissh-manager/vault.json` | Encrypted password vault, when used (location changeable) |
 
 ## Source layout
 
@@ -90,6 +97,9 @@ multissh_manager/
   ssh_config.py             ~/.ssh/config importer
   settings.py               options (settings.json)
   activity_log.py           optional activity log + secret redaction
+  secret_store.py           keychain (libsecret) and encrypted vault backends
+  askpass.py                SSH_ASKPASS helper run by ssh
+  askpass_server.py         private socket that answers the helper
   about_config.py           About tab content
   help_content.py           in-app help text (mirrored in HELP.md)
   theme.py, resources/      dark GTK stylesheet and icon

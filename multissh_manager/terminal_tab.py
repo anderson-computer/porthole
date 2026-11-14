@@ -50,6 +50,9 @@ class TerminalTab(Gtk.Box):
         self._post_login_timer = 0
         self._reconnect_after_exit = False
         self._feeding = False  # VTE emits "commit" for feed_child() too
+        self.env_provider = None  # callable(tab) -> list of "K=V" or None
+        self.askpass_token = None
+        self.saved_pw_attempts = 0
 
         # --- disconnected banner -------------------------------------
         self.infobar = Gtk.InfoBar()
@@ -138,6 +141,8 @@ class TerminalTab(Gtk.Box):
         self.infobar.hide()
         activity.log("session", "connect", host=self.host.name, target=self.host.target,
                      command=redact(self.host.command_preview()))
+        # Extra environment (askpass hookup for saved passwords), if any.
+        envv = self.env_provider(self) if self.env_provider else None
         self._post_login_pending = bool(self.host.post_login_command.strip())
         self.terminal.feed(
             f"\x1b[2m$ {self.host.command_preview()}\x1b[0m\r\n".encode("utf-8"))
@@ -150,12 +155,12 @@ class TerminalTab(Gtk.Box):
 
         try:
             self.terminal.spawn_async(
-                Vte.PtyFlags.DEFAULT, os.environ.get("HOME", "/"), argv, None,
+                Vte.PtyFlags.DEFAULT, os.environ.get("HOME", "/"), argv, envv,
                 GLib.SpawnFlags.SEARCH_PATH, None, None, -1, None, on_spawned)
         except (TypeError, AttributeError):
             try:
                 ok, pid = self.terminal.spawn_sync(
-                    Vte.PtyFlags.DEFAULT, os.environ.get("HOME", "/"), argv, None,
+                    Vte.PtyFlags.DEFAULT, os.environ.get("HOME", "/"), argv, envv,
                     GLib.SpawnFlags.SEARCH_PATH, None, None, None)
                 self.pid = pid
             except GLib.Error as e:

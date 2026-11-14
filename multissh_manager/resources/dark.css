@@ -116,3 +116,4 @@ infobar.error > revealer > box   { background-color: #3d1a1a; color: @msm_fg; }
 .msm-state-wait { color: @msm_warn; }
 .msm-state-dead { color: @msm_error; }
 .msm-help-topics { background-color: @msm_panel; padding: 6px; }
+notebook > stack { background-color: @msm_bg; }

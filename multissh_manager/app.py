@@ -28,7 +28,11 @@ from gi.repository import Gdk, GdkPixbuf, Gio, GLib, Gtk  # noqa: E402
 from . import __version__, importer, ssh_config, theme
 from . import about_config as about
 from .activity_log import activity, redact
-from .dialogs import FolderDialog, HostDialog, OptionsDialog, confirm, error
+from .askpass_server import AskpassServer
+from .dialogs import (AskpassDialog, FolderDialog, HostDialog, MasterPasswordDialog,
+                      OptionsDialog, confirm, error)
+from .secret_store import (BACKEND_KEYRING, BACKEND_LABELS, BACKEND_NONE, BACKEND_VAULT,
+                           FileVault, KeyringStore, VaultError, default_vault_path)
 from .help_content import HELP_TOPICS, OVERVIEW, SHORTCUTS
 from .models import Folder, Host, SessionStore
 from .settings import Settings, default_data_path
@@ -83,6 +87,7 @@ def describe_host_changes(before: dict, after: dict) -> str:
 
 def _options_snapshot(s: Settings) -> dict:
     return {"data_file": str(s.data_path), "log_enabled": s.log_enabled,
+            "password_backend": s.password_backend, "vault_file": s.vault_file,
             "log_file": s.log_file, "font": s.font, "scrollback_lines": s.scrollback_lines,
             "theme": s.theme, "post_login_idle_ms": s.post_login_idle_ms,
             "confirm_close_connected": s.confirm_close_connected,
@@ -105,6 +110,9 @@ class MainWindow(Gtk.ApplicationWindow):
         self.collapsed: Set[str] = set()
         self._special_tabs = {}
         self._history: List[str] = []
+        self.askpass = AskpassServer()
+        self._vault: Optional[FileVault] = None
+        self._keyring: Optional[KeyringStore] = None
         self._history_pos = 0
 
         self._install_actions()
@@ -158,6 +166,7 @@ class MainWindow(Gtk.ApplicationWindow):
             "zoom-out": lambda: self._with_tab(lambda t: t.zoom(1 / 1.1)),
             "zoom-reset": lambda: self._with_tab(lambda t: t.zoom(None)),
             "options": self._on_options,
+            "lock-vault": self._lock_vault,
             "help": self._open_help_tab,
             "about": self._open_about_tab,
         }
@@ -211,7 +220,8 @@ class MainWindow(Gtk.ApplicationWindow):
             ("Sort _Alphabetically", "win.sort"), ("_Find Host", "win.find")))
         edit_menu.append_section(None, section(
             ("_Copy", "win.copy"), ("_Paste", "win.paste")))
-        edit_menu.append_section(None, section(("_Options…", "win.options"),))
+        edit_menu.append_section(None, section(("_Options…", "win.options"),
+                                               ("_Lock Password Vault", "win.lock-vault")))
         menubar.append_submenu("_Edit", edit_menu)
 
         sess = Gio.Menu()
@@ -671,10 +681,11 @@ class MainWindow(Gtk.ApplicationWindow):
 
     def _add_host(self):
         parent = self._target_folder()
-        d = HostDialog(self)
+        d = HostDialog(self, password_store_label=self._password_store_label())
         if d.run() == Gtk.ResponseType.OK:
             host = d.get_host()
             parent.hosts.append(host)
+            self._apply_password_action(host, d.password_action())
             activity.log("tree", "add-host", name=host.name, target=host.target,
                          port=host.port, protocol=host.protocol, folder=parent.name)
             self.collapsed.discard(parent.id)
@@ -686,7 +697,11 @@ class MainWindow(Gtk.ApplicationWindow):
         if not nodes:
             return
         kind, node = nodes[0]
-        d = FolderDialog(self, node) if kind == "folder" else HostDialog(self, node)
+        if kind == "folder":
+            d = FolderDialog(self, node)
+        else:
+            d = HostDialog(self, node, password_store_label=self._password_store_label(),
+                           has_saved=node.save_password)
         if d.run() == Gtk.ResponseType.OK:
             if kind == "folder":
                 old_name = node.name
@@ -696,6 +711,7 @@ class MainWindow(Gtk.ApplicationWindow):
             else:
                 before = node.to_dict()
                 d.get_host()
+                self._apply_password_action(node, d.password_action())
                 activity.log("tree", "edit-host", name=node.name,
                              changes=describe_host_changes(before, node.to_dict()))
                 for tab in self._tabs():
@@ -729,6 +745,16 @@ class MainWindow(Gtk.ApplicationWindow):
                        "Open tabs stay open.", "_Delete", destructive=True):
             return
         root = self.session_store.root
+        saved = [h for k, n in nodes for h in ([n] if k == "host" else n.walk_hosts())
+                 if h.save_password]
+        store = self._open_store() if saved else None
+        for h in saved:
+            try:
+                if store is not None:
+                    store.delete(h.id)
+                activity.log("vault", "password-removed", host=h.name)
+            except VaultError:
+                pass
         for kind, node in nodes:
             if kind == "folder":
                 root.remove_folder(node.id)
@@ -886,6 +912,7 @@ class MainWindow(Gtk.ApplicationWindow):
 
     def _open_terminal_tab(self, host: Host) -> TerminalTab:
         tab = TerminalTab(host, self.settings)
+        tab.env_provider = self._askpass_env
         tab.connect("user-input", self._on_tab_user_input)
         tab.connect("session-state-changed", lambda t: self._update_status())
         tab.connect("close-requested", self._close_tab)
@@ -905,6 +932,7 @@ class MainWindow(Gtk.ApplicationWindow):
                            "_Close", destructive=True):
                 return False
         activity.log("session", "close-tab", host=tab.host.name, state=tab.state)
+        self.askpass.unregister(tab.askpass_token)
         tab.terminate()
         n = self.notebook.page_num(tab)
         if n != -1:
@@ -1109,6 +1137,7 @@ class MainWindow(Gtk.ApplicationWindow):
     # ================================================================
     def _on_options(self):
         d = OptionsDialog(self, self.settings)
+        d.change_master_btn.connect("clicked", lambda b: self._change_master(d.vault_path()))
         while True:
             if d.run() != Gtk.ResponseType.OK:
                 d.destroy()
@@ -1120,6 +1149,8 @@ class MainWindow(Gtk.ApplicationWindow):
             break
         before = _options_snapshot(self.settings)
         old_data = self.settings.data_path
+        old_backend, old_vault = self.settings.password_backend, self._vault_path()
+        new_backend = d.backend.get_active_id() or BACKEND_NONE
         d.apply_to(self.settings)
         d.destroy()
 
@@ -1140,6 +1171,12 @@ class MainWindow(Gtk.ApplicationWindow):
 
         if new_data != old_data and self._change_data_file(old_data, new_data):
             self.settings.data_file = "" if new_data == default_data_path() else str(new_data)
+
+        if self._vault_path() != old_vault and self._vault is not None:
+            self._vault.lock()
+            self._vault = None
+        if new_backend != old_backend:
+            self._switch_backend(old_backend, new_backend, old_vault)
 
         after = _options_snapshot(self.settings)
         changed = {k: v for k, v in after.items()
@@ -1200,6 +1237,245 @@ class MainWindow(Gtk.ApplicationWindow):
         self._update_title()
         return True
 
+    # ================================================================
+    # Saved passwords (keychain / vault) and askpass
+    # ================================================================
+    def _vault_path(self) -> Path:
+        v = self.settings.vault_file
+        return Path(v).expanduser() if v else default_vault_path()
+
+    def _password_store_label(self) -> Optional[str]:
+        b = self.settings.password_backend
+        if b == BACKEND_KEYRING:
+            return "system keychain"
+        if b == BACKEND_VAULT:
+            return "encrypted vault"
+        return None
+
+    def _open_store(self, backend: Optional[str] = None, create: bool = False,
+                    vault_path: Optional[Path] = None):
+        """Return a ready-to-use store, prompting to unlock/create the vault
+        when needed. None if unavailable or the user cancelled."""
+        backend = backend or self.settings.password_backend
+        if backend == BACKEND_KEYRING:
+            if self._keyring is None:
+                self._keyring = KeyringStore()
+            if not self._keyring.available:
+                error(self, "System keychain not available",
+                      self._keyring.error or "No Secret Service (GNOME Keyring/KWallet) "
+                      "is running in this session. Use the encrypted vault instead.")
+                return None
+            return self._keyring
+        if backend != BACKEND_VAULT:
+            return None
+        path = vault_path or self._vault_path()
+        vault = self._vault if self._vault is not None and self._vault.path == path \
+            else FileVault(path)
+        if vault.unlocked:
+            self._vault = vault
+            return vault
+        message = ""
+        while True:
+            if not vault.exists and not create:
+                return None
+            mode = "unlock" if vault.exists else "create"
+            dlg = MasterPasswordDialog(self, mode, path, message)
+            resp = dlg.run()
+            current, new = dlg.current_password(), dlg.new_password()
+            dlg.destroy()
+            if resp != Gtk.ResponseType.OK:
+                return None
+            try:
+                if mode == "create":
+                    vault.create(new)
+                    activity.log("vault", "created", path=path)
+                else:
+                    vault.unlock(current)
+                    activity.log("vault", "unlocked", path=path)
+            except VaultError as e:
+                activity.log("vault", f"{mode}-failed", path=path, error=e)
+                message = str(e)
+                continue
+            self._vault = vault
+            return vault
+
+    def _lock_vault(self):
+        if self._vault is not None and self._vault.unlocked:
+            self._vault.lock()
+            activity.log("vault", "locked")
+            self._status("Password vault locked.")
+        else:
+            self._status("The password vault is not unlocked.")
+
+    def _change_master(self, path: Path):
+        vault = FileVault(path)
+        if not vault.exists:
+            error(self, "No vault yet", "A vault is created the first time you save a password.")
+            return
+        message = ""
+        while True:
+            dlg = MasterPasswordDialog(self, "change", path, message)
+            resp = dlg.run()
+            old, new = dlg.current_password(), dlg.new_password()
+            dlg.destroy()
+            if resp != Gtk.ResponseType.OK:
+                return
+            try:
+                vault.change_master(old, new)
+            except VaultError as e:
+                message = str(e)
+                continue
+            if self._vault is not None and self._vault.path == path:
+                self._vault = vault
+            activity.log("vault", "master-password-changed", path=path)
+            self._status("Master password changed.")
+            return
+
+    def _get_saved_password(self, host: Host) -> Optional[str]:
+        store = self._open_store()
+        if store is None:
+            return None
+        try:
+            return store.get(host.id)
+        except VaultError as e:
+            self._status(str(e))
+            return None
+
+    def _save_password(self, host: Host, password: str) -> bool:
+        store = self._open_store(create=True)
+        if store is None:
+            return False
+        try:
+            if isinstance(store, KeyringStore):
+                store.set(host.id, password, f"MultiSSH Manager: {host.name} ({host.target})")
+            else:
+                store.set(host.id, password)
+        except VaultError as e:
+            error(self, "Could not save the password", str(e))
+            return False
+        host.save_password = True
+        activity.log("vault", "password-saved", host=host.name,
+                     store=self.settings.password_backend)
+        return True
+
+    def _forget_password(self, host: Host) -> None:
+        store = self._open_store()
+        if store is not None:
+            try:
+                store.delete(host.id)
+            except VaultError as e:
+                error(self, "Could not remove the saved password", str(e))
+                return
+        host.save_password = False
+        activity.log("vault", "password-removed", host=host.name)
+
+    def _apply_password_action(self, host: Host, action) -> None:
+        what, value = action
+        if what == "set":
+            self._save_password(host, value)
+        elif what == "forget":
+            self._forget_password(host)
+
+    def _switch_backend(self, old: str, new: str, old_vault: Path) -> None:
+        hosts = [h for h in self.session_store.root.walk_hosts() if h.save_password]
+        if old == BACKEND_NONE or not hosts:
+            return
+        if new == BACKEND_NONE:
+            if confirm(self, f"Delete {len(hosts)} saved password(s)?",
+                       f"They are stored in the {BACKEND_LABELS[old].lower()}. "
+                       "Cancel keeps them there in case you switch back.",
+                       "_Delete", destructive=True):
+                src = self._open_store(old, vault_path=old_vault)
+                for h in hosts:
+                    try:
+                        if src:
+                            src.delete(h.id)
+                    except VaultError:
+                        pass
+                    h.save_password = False
+                activity.log("vault", "passwords-deleted", count=len(hosts), store=old)
+                self._changed()
+            return
+        if not confirm(self, f"Move {len(hosts)} saved password(s)?",
+                       f"From the {BACKEND_LABELS[old].lower()} to the "
+                       f"{BACKEND_LABELS[new].lower()}.", "_Move"):
+            return
+        src = self._open_store(old, vault_path=old_vault)
+        dst = self._open_store(new, create=True)
+        if src is None or dst is None:
+            error(self, "Passwords not moved",
+                  "Both the old and new password stores must be available.")
+            return
+        moved = 0
+        for h in hosts:
+            try:
+                pw = src.get(h.id)
+                if pw is None:
+                    continue
+                if isinstance(dst, KeyringStore):
+                    dst.set(h.id, pw, f"MultiSSH Manager: {h.name} ({h.target})")
+                else:
+                    dst.set(h.id, pw)
+                src.delete(h.id)
+                moved += 1
+            except VaultError as e:
+                error(self, f"Could not move the password for {h.name}", str(e))
+                break
+        activity.log("vault", "passwords-moved", count=moved, source=old, destination=new)
+        self._status(f"Moved {moved} saved password(s).")
+
+    def _askpass_env(self, tab: TerminalTab):
+        """Environment for ssh so it asks us (not the terminal) for the saved
+        password. Only used for ssh hosts marked "save password"."""
+        self.askpass.unregister(tab.askpass_token)
+        tab.askpass_token = None
+        tab.saved_pw_attempts = 0
+        host = tab.host
+        if (not host.save_password or host.protocol != "ssh"
+                or self.settings.password_backend == BACKEND_NONE):
+            return None
+        try:
+            self.askpass.start()
+        except OSError as e:
+            self._status(f"Saved password unavailable: {e}")
+            return None
+        tab.askpass_token = self.askpass.register(
+            lambda prompt, kind: self._on_askpass(tab, prompt, kind))
+        return self.askpass.env_for(tab.askpass_token)
+
+    def _on_askpass(self, tab: TerminalTab, prompt: str, kind: str) -> Optional[str]:
+        host = tab.host
+        lower = prompt.lower()
+        is_password = "password" in lower and kind not in ("confirm", "none")
+        jump_names = [p.split("@")[-1].split(":")[0]
+                      for p in host.jump_host.split(",") if p.strip()]
+        for_jump = any(j and j in prompt for j in jump_names)
+        note = ""
+        if is_password and not for_jump:
+            if tab.saved_pw_attempts == 0:
+                tab.saved_pw_attempts += 1
+                pw = self._get_saved_password(host)
+                if pw is not None:
+                    activity.log("session", "password-supplied", host=host.name,
+                                 store=self.settings.password_backend)
+                    return pw
+            else:
+                note = "The saved password was not accepted."
+        activity.log("session", "askpass-prompt", host=host.name,
+                     prompt=prompt.strip().splitlines()[-1][:120] if prompt.strip() else "",
+                     kind=kind or "text")
+        save_label = self._password_store_label() if is_password and not for_jump else None
+        dlg = AskpassDialog(self, host.name, prompt, kind, save_label, note)
+        if save_label and dlg.save_check is not None:
+            dlg.save_check.set_active(bool(note) or not host.save_password)
+        answer = dlg.answer()
+        wants_save = dlg.wants_save
+        dlg.destroy()
+        if answer and wants_save:
+            if self._save_password(host, answer):
+                self._changed()
+        return answer
+
     def _status(self, text: str):
         self.statusbar.pop(self.status_ctx)
         self.statusbar.push(self.status_ctx, text)
@@ -1235,6 +1511,9 @@ class MainWindow(Gtk.ApplicationWindow):
         self.settings.last_open_host_ids = [t.host.id for t in self._tabs()]
         self.settings.save()
         activity.log("app", "quit", open_tabs=len(self._tabs()))
+        if self._vault is not None:
+            self._vault.lock()
+        self.askpass.stop()
         for t in self._tabs():
             t.terminate()
         return True

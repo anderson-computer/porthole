@@ -23,7 +23,8 @@ if [ "${1:-}" = "--uninstall" ]; then
 fi
 
 echo "==> Installing dependencies (GTK3, VTE, PyGObject, OpenSSH client)"
-dnf install -y python3 python3-gobject gtk3 vte291 openssh-clients
+dnf install -y python3 python3-gobject gtk3 vte291 openssh-clients \
+    python3-cryptography libsecret
 
 echo "==> Installing application to ${INSTALL_DIR}"
 rm -rf "${INSTALL_DIR}"

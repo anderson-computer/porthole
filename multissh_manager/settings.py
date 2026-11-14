@@ -32,6 +32,8 @@ class Settings:
     data_file: str = ""                  # "" = ~/.config/multissh-manager/sessions.json
     log_enabled: bool = False
     log_file: str = ""                   # "" = ~/.local/state/multissh-manager/activity.log
+    password_backend: str = "none"       # none | keyring | vault
+    vault_file: str = ""                 # "" = ~/.config/multissh-manager/vault.json
 
     @property
     def data_path(self) -> Path:

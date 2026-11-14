@@ -10,10 +10,12 @@ import gi
 
 gi.require_version("Gtk", "3.0")
 gi.require_version("Gdk", "3.0")
-from gi.repository import Gtk, Pango  # noqa: E402
+from gi.repository import GLib, Gtk, Pango  # noqa: E402
 
 from .models import AUTH_METHODS, PROTOCOLS, Folder, Host
 from .activity_log import default_log_path
+from .secret_store import (BACKEND_KEYRING, BACKEND_LABELS, BACKEND_NONE, BACKEND_VAULT,
+                           MIN_MASTER_LEN, default_vault_path)
 from .settings import Settings, default_data_path
 
 AUTH_LABELS = {
@@ -44,7 +46,10 @@ def _tv_text(sw) -> str:
 
 
 class HostDialog(Gtk.Dialog):
-    def __init__(self, parent, host: Optional[Host] = None):
+    def __init__(self, parent, host: Optional[Host] = None,
+                 password_store_label: Optional[str] = None, has_saved: bool = False):
+        """password_store_label: where passwords would be saved, or None
+        when password saving is turned off in Options."""
         super().__init__(
             title="Edit Host" if host else "Add Host",
             transient_for=parent, modal=True, destroy_with_parent=True,
@@ -110,6 +115,36 @@ class HostDialog(Gtk.Dialog):
         key_box.pack_start(key_browse, False, False, 0)
         self.key_box = add_row("Private key", key_box)
 
+        pw_box = Gtk.Box(spacing=6)
+        self.password_entry = Gtk.Entry(visibility=False, input_purpose=Gtk.InputPurpose.PASSWORD)
+        self.password_entry.set_hexpand(True)
+        self.password_entry.set_icon_from_icon_name(Gtk.EntryIconPosition.SECONDARY,
+                                                    "view-reveal-symbolic")
+        self.password_entry.set_icon_tooltip_text(Gtk.EntryIconPosition.SECONDARY, "Show/hide")
+        self.password_entry.connect(
+            "icon-press", lambda e, *a: e.set_visibility(not e.get_visibility()))
+        self.save_pw_check = Gtk.CheckButton(label="Save")
+        self.has_saved = has_saved
+        self.password_store_label = password_store_label
+        if password_store_label is None:
+            self.password_entry.set_placeholder_text(
+                "Saving passwords is off (Edit ▸ Options ▸ Passwords)")
+            self.password_entry.set_sensitive(False)
+            self.save_pw_check.set_sensitive(False)
+        else:
+            self.password_entry.set_placeholder_text(
+                "Saved — type to replace" if has_saved else "(optional) saved securely")
+            self.save_pw_check.set_active(has_saved)
+            self.save_pw_check.set_tooltip_text(f"Store in: {password_store_label}")
+            self.password_entry.connect(
+                "changed", lambda e: e.get_text() and self.save_pw_check.set_active(True))
+        pw_box.pack_start(self.password_entry, True, True, 0)
+        pw_box.pack_start(self.save_pw_check, False, False, 0)
+        self.pw_box = add_row("Password", pw_box,
+                              "Supplied to ssh automatically through a private askpass "
+                              "helper; never typed into the terminal or written to "
+                              "the session file. Untick Save to forget a saved password.")
+
         self.jump_entry = add_row(
             "Jump host", Gtk.Entry(text=h.jump_host, placeholder_text="user@bastion:22 (optional)"),
             "Passed to ssh -J. Comma-separate multiple hops.")
@@ -168,6 +203,9 @@ class HostDialog(Gtk.Dialog):
     def _update(self, *_):
         is_ssh = self.protocol_combo.get_active_id() == "ssh"
         self.auth_combo.set_sensitive(is_ssh)
+        if self.password_store_label is not None:
+            self.pw_box.set_sensitive(is_ssh and self.auth_combo.get_active_id()
+                                      in ("default", "password"))
         self.key_box.set_sensitive(is_ssh and self.auth_combo.get_active_id() == "key")
         self.jump_entry.set_sensitive(is_ssh)
         self.extra_entry.set_sensitive(is_ssh)
@@ -195,9 +233,18 @@ class HostDialog(Gtk.Dialog):
         """Apply the form to the original Host object and return it."""
         new = self._collect()
         for f in Host.__dataclass_fields__:
-            if f != "id":
+            if f not in ("id", "save_password"):
                 setattr(self.host, f, getattr(new, f))
         return self.host
+
+    def password_action(self):
+        """("set", pw) / ("forget", None) / (None, None) for no change."""
+        if self.password_store_label is None or not self.pw_box.get_sensitive():
+            return (None, None)
+        text = self.password_entry.get_text()
+        if self.save_pw_check.get_active():
+            return ("set", text) if text else (None, None)
+        return ("forget", None) if self.has_saved else (None, None)
 
 
 class FolderDialog(Gtk.Dialog):
@@ -234,15 +281,12 @@ class OptionsDialog(Gtk.Dialog):
         ok.get_style_context().add_class("suggested-action")
         self.set_default_response(Gtk.ResponseType.OK)
 
-        outer = Gtk.Box(orientation=Gtk.Orientation.VERTICAL, spacing=14, margin=14)
-        self.get_content_area().add(outer)
+        self.notebook = Gtk.Notebook(margin=8)
+        self.get_content_area().add(self.notebook)
 
         def section(title):
-            lbl = Gtk.Label(xalign=0)
-            lbl.set_markup(f"<b>{title}</b>")
-            outer.pack_start(lbl, False, False, 0)
-            grid = Gtk.Grid(column_spacing=10, row_spacing=8, margin_start=12)
-            outer.pack_start(grid, False, False, 0)
+            grid = Gtk.Grid(column_spacing=10, row_spacing=8, margin=14)
+            self.notebook.append_page(grid, Gtk.Label(label=title))
             return grid
 
         def note(text):
@@ -266,7 +310,7 @@ class OptionsDialog(Gtk.Dialog):
             grid.attach(box, 1, row, 1, 1)
 
         # --- Data file -------------------------------------------------
-        g = section("Session data file")
+        g = section("Data File")
         self.data_entry = Gtk.Entry(text=str(settings.data_path))
         path_row(g, 0, "Location", self.data_entry,
                  lambda: self._browse(self.data_entry, "Choose session data file",
@@ -277,7 +321,7 @@ class OptionsDialog(Gtk.Dialog):
                       "open it or overwrite it with your current sessions."), 1, 1, 1, 1)
 
         # --- Activity log ----------------------------------------------
-        g = section("Activity log")
+        g = section("Activity Log")
         self.log_check = Gtk.CheckButton(label="Append activity to a log file")
         self.log_check.set_active(settings.log_enabled)
         g.attach(self.log_check, 0, 0, 2, 1)
@@ -294,6 +338,33 @@ class OptionsDialog(Gtk.Dialog):
         self.log_check.connect("toggled", lambda c: self._sync_log_sensitivity())
         self._log_widgets = [w for w in g.get_children() if w is not self.log_check]
         self._sync_log_sensitivity()
+
+        # --- Passwords ---------------------------------------------------
+        g = section("Passwords")
+        self.backend = Gtk.ComboBoxText()
+        for key, label in BACKEND_LABELS.items():
+            self.backend.append(key, label)
+        self.backend.set_active_id(settings.password_backend)
+        g.attach(Gtk.Label(label="Store passwords", xalign=1), 0, 0, 1, 1)
+        g.attach(self.backend, 1, 0, 1, 1)
+        self.vault_entry = Gtk.Entry(text=settings.vault_file or str(default_vault_path()))
+        path_row(g, 1, "Vault file", self.vault_entry,
+                 lambda: self._browse(self.vault_entry, "Choose vault file",
+                                      "vault.json", "*.json"),
+                 lambda: self.vault_entry.set_text(str(default_vault_path())))
+        self.vault_widgets = [c for c in g.get_children()
+                              if g.child_get_property(c, "top-attach") == 1]
+        self.change_master_btn = Gtk.Button(label="Change Master Password…")
+        self.change_master_btn.set_halign(Gtk.Align.START)
+        g.attach(self.change_master_btn, 1, 2, 1, 1)
+        g.attach(note("Keychain: stored in your login keyring, unlocked when you log in. "
+                      "Vault: an AES-256 encrypted file, unlocked with a master password "
+                      "once per session — works without a desktop keyring. Saved "
+                      "passwords are handed to ssh through a private helper and are never "
+                      "typed into the terminal, written to the session file, or logged."),
+                 1, 3, 1, 1)
+        self.backend.connect("changed", lambda c: self._sync_backend())
+        self._sync_backend()
 
         # --- Terminal & appearance --------------------------------------
         g = section("Terminal")
@@ -323,6 +394,15 @@ class OptionsDialog(Gtk.Dialog):
         g.attach(self.confirm, 0, len(rows), 2, 1)
         g.attach(self.restore, 0, len(rows) + 1, 2, 1)
         self.show_all()
+
+    def _sync_backend(self):
+        is_vault = self.backend.get_active_id() == BACKEND_VAULT
+        for w in self.vault_widgets + [self.change_master_btn]:
+            w.set_sensitive(is_vault)
+
+    def vault_path(self) -> Path:
+        text = self.vault_entry.get_text().strip()
+        return Path(text).expanduser() if text else default_vault_path()
 
     def _sync_log_sensitivity(self):
         for w in self._log_widgets:
@@ -365,8 +445,138 @@ class OptionsDialog(Gtk.Dialog):
         s.confirm_close_connected = self.confirm.get_active()
         s.restore_tabs = self.restore.get_active()
         s.log_enabled = self.log_check.get_active()
+        vp = self.vault_path()
+        s.vault_file = "" if vp == default_vault_path() else str(vp)
         lp = self.log_path()
         s.log_file = "" if lp == default_log_path() else str(lp)
+
+
+class MasterPasswordDialog(Gtk.Dialog):
+    """mode: "create", "unlock" or "change"."""
+
+    def __init__(self, parent, mode: str, vault_path: Path, message: str = ""):
+        titles = {"create": "Create Password Vault", "unlock": "Unlock Password Vault",
+                  "change": "Change Master Password"}
+        super().__init__(title=titles[mode], transient_for=parent, modal=True,
+                         destroy_with_parent=True)
+        self.mode = mode
+        self.add_button("_Cancel", Gtk.ResponseType.CANCEL)
+        self.ok = self.add_button("_Unlock" if mode == "unlock" else "_Save",
+                                  Gtk.ResponseType.OK)
+        self.ok.get_style_context().add_class("suggested-action")
+        self.set_default_response(Gtk.ResponseType.OK)
+        box = Gtk.Box(orientation=Gtk.Orientation.VERTICAL, spacing=8, margin=14)
+        self.get_content_area().add(box)
+        intro = {
+            "create": "Choose a master password for your new vault. It encrypts every "
+                      "saved host password and cannot be recovered if forgotten.",
+            "unlock": "Enter the master password to unlock saved host passwords "
+                      "for this session.",
+            "change": "Enter the current master password and a new one.",
+        }[mode]
+        lbl = Gtk.Label(label=intro, xalign=0, wrap=True, max_width_chars=56)
+        box.pack_start(lbl, False, False, 0)
+        path_lbl = Gtk.Label(label=str(vault_path), xalign=0, selectable=True)
+        path_lbl.get_style_context().add_class("msm-dim")
+        box.pack_start(path_lbl, False, False, 0)
+        if message:
+            m = Gtk.Label(xalign=0, wrap=True, max_width_chars=56)
+            m.set_markup(f"<span foreground='#e5534b'>{GLib.markup_escape_text(message)}</span>")
+            box.pack_start(m, False, False, 0)
+
+        def pw(placeholder):
+            e = Gtk.Entry(visibility=False, activates_default=True,
+                          input_purpose=Gtk.InputPurpose.PASSWORD,
+                          placeholder_text=placeholder)
+            e.connect("changed", lambda _e: self._validate())
+            box.pack_start(e, False, False, 0)
+            return e
+
+        self.current = pw("Current master password") if mode in ("unlock", "change") else None
+        if mode in ("create", "change"):
+            self.new1 = pw(f"New master password (min. {MIN_MASTER_LEN} characters)")
+            self.new2 = pw("Repeat new master password")
+        else:
+            self.new1 = self.new2 = None
+        self.hint = Gtk.Label(xalign=0)
+        self.hint.get_style_context().add_class("msm-dim")
+        box.pack_start(self.hint, False, False, 0)
+        self._validate()
+        self.show_all()
+
+    def _validate(self):
+        ok, hint = True, ""
+        if self.current is not None and not self.current.get_text():
+            ok = False
+        if self.new1 is not None:
+            a, b = self.new1.get_text(), self.new2.get_text()
+            if len(a) < MIN_MASTER_LEN:
+                ok, hint = False, f"At least {MIN_MASTER_LEN} characters."
+            elif a != b:
+                ok, hint = False, "Passwords don't match."
+        self.hint.set_text(hint)
+        self.ok.set_sensitive(ok)
+
+    def current_password(self) -> str:
+        return self.current.get_text() if self.current else ""
+
+    def new_password(self) -> str:
+        return self.new1.get_text() if self.new1 else ""
+
+
+class AskpassDialog(Gtk.Dialog):
+    """Shows a prompt from ssh (password, passphrase, host key, OTP...)."""
+
+    def __init__(self, parent, host_name: str, prompt: str, kind: str,
+                 save_label: Optional[str] = None, note_text: str = ""):
+        super().__init__(title=f"{host_name} — ssh", transient_for=parent, modal=True,
+                         destroy_with_parent=True)
+        self.set_default_size(460, -1)
+        lower = prompt.lower()
+        self.is_confirm = kind == "confirm" or "(yes/no" in lower
+        self.is_info = kind == "none"
+        box = Gtk.Box(orientation=Gtk.Orientation.VERTICAL, spacing=8, margin=14)
+        self.get_content_area().add(box)
+        if note_text:
+            n = Gtk.Label(xalign=0, wrap=True, max_width_chars=60)
+            n.set_markup(f"<span foreground='#e0b04a'>{GLib.markup_escape_text(note_text)}</span>")
+            box.pack_start(n, False, False, 0)
+        lbl = Gtk.Label(label=prompt.strip(), xalign=0, wrap=True, max_width_chars=70,
+                        selectable=True)
+        box.pack_start(lbl, False, False, 0)
+        self.entry = None
+        self.save_check = None
+        if self.is_info:
+            self.add_button("_OK", Gtk.ResponseType.OK)
+        elif self.is_confirm:
+            self.add_button("_No", Gtk.ResponseType.NO)
+            yes = self.add_button("_Yes", Gtk.ResponseType.YES)
+            yes.get_style_context().add_class("suggested-action")
+        else:
+            self.entry = Gtk.Entry(visibility=False, activates_default=True,
+                                   input_purpose=Gtk.InputPurpose.PASSWORD)
+            box.pack_start(self.entry, False, False, 0)
+            if save_label:
+                self.save_check = Gtk.CheckButton(label=f"Save password ({save_label})")
+                box.pack_start(self.save_check, False, False, 0)
+            self.add_button("_Cancel", Gtk.ResponseType.CANCEL)
+            ok = self.add_button("_OK", Gtk.ResponseType.OK)
+            ok.get_style_context().add_class("suggested-action")
+            self.set_default_response(Gtk.ResponseType.OK)
+        self.show_all()
+
+    def answer(self) -> Optional[str]:
+        """Runs the dialog; returns the text for ssh or None if cancelled."""
+        resp = self.run()
+        if self.is_info:
+            return ""
+        if self.is_confirm:
+            return "yes" if resp == Gtk.ResponseType.YES else "no"
+        return self.entry.get_text() if resp == Gtk.ResponseType.OK else None
+
+    @property
+    def wants_save(self) -> bool:
+        return bool(self.save_check and self.save_check.get_active())
 
 
 def confirm(parent, text: str, secondary: str = "", ok_label: str = "_OK",

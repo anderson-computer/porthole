@@ -43,6 +43,7 @@ class Host:
     post_login_command: str = ""     # one or more lines, sent after login
     extra_ssh_args: str = ""         # shell-quoted extra args passed to ssh
     notes: str = ""
+    save_password: bool = False      # password kept in keychain/vault, never here
 
     def to_dict(self) -> dict:
         return asdict(self)
@@ -72,6 +73,7 @@ class Host:
         d = self.to_dict()
         d["id"] = _new_id()
         d["name"] = f"{self.name} (copy)"
+        d["save_password"] = False  # the secret itself isn't copied
         return Host.from_dict(d)
 
     @property

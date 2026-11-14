@@ -1,4 +1,4 @@
-%{!?app_version: %global app_version 2.1.0}
+%{!?app_version: %global app_version 2.2.0}
 
 Name:           multissh-manager
 Version:        %{app_version}
@@ -16,6 +16,8 @@ Requires:       python3-gobject
 Requires:       gtk3
 Requires:       vte291
 Requires:       openssh-clients
+Requires:       python3-cryptography
+Requires:       libsecret
 
 %description
 MultiSSH Manager is a native GTK tabbed SSH session manager for Rocky
@@ -60,6 +62,13 @@ gtk-update-icon-cache -q %{_datadir}/icons/hicolor &>/dev/null || :
 gtk-update-icon-cache -q %{_datadir}/icons/hicolor &>/dev/null || :
 
 %changelog
+* Sat Nov 14 2026 Mike Anderson <18270693+mike0615@users.noreply.github.com> - 2.2.0-1
+- Saved host passwords in the system keychain (libsecret) or an AES-256-GCM
+  encrypted vault file with a scrypt-derived master password.
+- Passwords reach ssh via SSH_ASKPASS over a private socket; other ssh
+  prompts (host keys, passphrases, OTP) appear as dialogs for those hosts.
+- Options dialog split into tabs.
+
 * Sat Nov 14 2026 Mike Anderson <18270693+mike0615@users.noreply.github.com> - 2.1.0-1
 - Edit > Options (replaces File > Preferences): choose the session data
   file location; optional append-only activity log with secret redaction.
