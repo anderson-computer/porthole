@@ -63,6 +63,11 @@ fi
 %doc README.md HELP.md
 
 %post
+# rpm decides before %pre runs, so a file moved aside there leaves the new
+# copy as .rpmnew; put it in place.
+if [ ! -e %{_sysconfdir}/%{name}/about.conf ] && [ -e %{_sysconfdir}/%{name}/about.conf.rpmnew ]; then
+    mv %{_sysconfdir}/%{name}/about.conf.rpmnew %{_sysconfdir}/%{name}/about.conf || :
+fi
 gtk-update-icon-cache -q %{_datadir}/icons/hicolor &>/dev/null || :
 
 %postun
