@@ -97,3 +97,7 @@ tests/                      unit tests (python3 -m unittest discover -s tests)
 ```
 
 See [HELP.md](HELP.md) for the full usage guide.
+
+## License
+
+MIT. See [LICENSE](LICENSE).

@@ -24,6 +24,18 @@ USER_CONFIG = config_dir() / "about.conf"
 DEFAULT_LOGO = RESOURCES_DIR / "logo.svg"
 
 
+LICENSE_NOTICE = (
+    "MultiSSH Manager is free software, released under the MIT License. You may "
+    "use, copy, modify, merge, publish, distribute, sublicense, and/or sell copies "
+    "of it, provided the copyright notice and permission notice are included in "
+    "all copies or substantial portions of the software.\n\n"
+    "MultiSSH Manager is provided \"as is\", without warranty of any kind, express "
+    "or implied, including but not limited to the warranties of merchantability, "
+    "fitness for a particular purpose and noninfringement. See the MIT License "
+    "for more details."
+)
+
+
 @dataclass
 class AboutInfo:
     # version always comes from the installed package, never from a file.

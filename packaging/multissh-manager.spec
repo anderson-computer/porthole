@@ -2,7 +2,7 @@
 
 Name:           multissh-manager
 Version:        %{app_version}
-Release:        1%{?dist}
+Release:        2%{?dist}
 Summary:        Tabbed SSH session manager with folders and multi-session broadcast
 
 License:        MIT
@@ -60,6 +60,7 @@ fi
 %{_datadir}/icons/hicolor/scalable/apps/%{name}.svg
 %dir %{_sysconfdir}/%{name}
 %config(noreplace) %{_sysconfdir}/%{name}/about.conf
+%license LICENSE
 %doc README.md HELP.md
 
 %post
@@ -74,6 +75,10 @@ gtk-update-icon-cache -q %{_datadir}/icons/hicolor &>/dev/null || :
 gtk-update-icon-cache -q %{_datadir}/icons/hicolor &>/dev/null || :
 
 %changelog
+* Sat Nov 14 2026 Mike <18270693+mike0615@users.noreply.github.com> - 2.0.0-2
+- Add MIT LICENSE file and license notice on the About tab.
+- Install about.conf correctly when upgrading over a 1.x install.sh setup.
+
 * Sat Nov 14 2026 Mike <18270693+mike0615@users.noreply.github.com> - 2.0.0-1
 - Rewrite: per-tab broadcast targets and live keystroke mirroring,
   reconnect-in-place, sidebar search, drag-and-drop, auto-save,

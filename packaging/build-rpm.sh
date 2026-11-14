@@ -21,7 +21,7 @@ trap 'rm -rf "${TOPDIR}"' EXIT
 mkdir -p "${TOPDIR}"/{SPECS,SOURCES,BUILD,RPMS,SRPMS}
 SRC_DIR="${TOPDIR}/stage/${NAME}-${VERSION}"
 mkdir -p "${SRC_DIR}"
-cp -a "${PROJECT_DIR}"/{multissh_manager,run.py,multissh-manager.desktop,README.md,HELP.md} "${SRC_DIR}/"
+cp -a "${PROJECT_DIR}"/{multissh_manager,run.py,multissh-manager.desktop,README.md,HELP.md,LICENSE} "${SRC_DIR}/"
 cp -a "${PROJECT_DIR}/packaging/about.conf.system" "${SRC_DIR}/"
 find "${SRC_DIR}" -name __pycache__ -prune -exec rm -rf {} +
 tar -czf "${TOPDIR}/SOURCES/${NAME}-${VERSION}.tar.gz" -C "${TOPDIR}/stage" "${NAME}-${VERSION}"

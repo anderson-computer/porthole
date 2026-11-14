@@ -26,7 +26,7 @@ gi.require_version("GdkPixbuf", "2.0")
 from gi.repository import Gdk, GdkPixbuf, Gio, GLib, Gtk  # noqa: E402
 
 from . import __version__, importer, ssh_config, theme
-from .about_config import load_about_info
+from .about_config import LICENSE_NOTICE, load_about_info
 from .dialogs import FolderDialog, HostDialog, PreferencesDialog, confirm, error
 from .help_content import HELP_TOPICS, OVERVIEW, SHORTCUTS
 from .models import Folder, Host, SessionStore
@@ -1030,11 +1030,10 @@ class MainWindow(Gtk.ApplicationWindow):
             if info.link_url:
                 box.pack_start(Gtk.LinkButton.new_with_label(info.link_url, info.link_label),
                                False, False, 6)
-            note = Gtk.Label(label="This page is configured by about.conf "
-                                   "(/etc/multissh-manager or ~/.config/multissh-manager).",
-                             wrap=True, max_width_chars=60, justify=Gtk.Justification.CENTER)
-            note.get_style_context().add_class("msm-dim")
-            box.pack_start(note, False, False, 16)
+            lic = Gtk.Label(label=LICENSE_NOTICE, wrap=True, max_width_chars=72,
+                            justify=Gtk.Justification.CENTER, selectable=True)
+            lic.get_style_context().add_class("msm-dim")
+            box.pack_start(lic, False, False, 16)
             sw.add(box)
             return sw
 
