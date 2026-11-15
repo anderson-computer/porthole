@@ -47,10 +47,21 @@ BaseOS/AppStream repos. You don't need EPEL or pip.
 
 ### RPM (recommended)
 
+Download the RPM for your release from the
+[Releases](https://github.com/mike0615/multissh-manager-v2/releases) page and
+install it with dnf, which pulls the dependencies from the stock repos:
+
 ```bash
-sudo dnf install -y rpm-build
-./packaging/build-rpm.sh                 # runs the tests, writes dist/*.rpm
-sudo dnf install ./dist/multissh-manager-2.0.0-1*.rpm
+sudo dnf install ./multissh-manager-2.2.0-1.el9.noarch.rpm    # Rocky 9
+sudo dnf install ./multissh-manager-2.2.0-1.el10.noarch.rpm   # Rocky 10
+```
+
+To build the RPMs yourself:
+
+```bash
+sudo dnf install -y rpm-build desktop-file-utils python3-cryptography python3-gobject-base
+./packaging/build-rpm.sh          # native: writes out/*.el9 or out/*.el10 RPM + SRPM
+./packaging/build-rpm.sh 9 10     # or both, in Rocky containers (podman/docker)
 ```
 
 ### Script
@@ -103,7 +114,7 @@ multissh_manager/
   about_config.py           About tab content
   help_content.py           in-app help text (mirrored in HELP.md)
   theme.py, resources/      dark GTK stylesheet and icon
-packaging/                  RPM spec and build script
+packaging/                  RPM spec and build scripts (build-rpm.sh, build-in-container.sh)
 tests/                      unit tests (python3 -m unittest discover -s tests)
 ```
 

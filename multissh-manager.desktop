@@ -6,5 +6,5 @@ Comment=Tabbed SSH session manager with folders and multi-session broadcast
 Exec=multissh-manager %f
 Icon=multissh-manager
 Terminal=false
-Categories=System;Network;RemoteAccess;
+Categories=Network;RemoteAccess;
 Keywords=ssh;terminal;putty;remote;broadcast;

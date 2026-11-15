@@ -1,4 +1,5 @@
 %{!?app_version: %global app_version 2.2.0}
+%global debug_package %{nil}
 
 Name:           multissh-manager
 Version:        %{app_version}
@@ -6,11 +7,24 @@ Release:        1%{?dist}
 Summary:        Tabbed SSH session manager with folders and multi-session broadcast
 
 License:        MIT
+URL:            https://github.com/mike0615/multissh-manager-v2
 Source0:        %{name}-%{version}.tar.gz
 BuildArch:      noarch
 
-# Every runtime dependency ships in the stock Rocky Linux 9/10 AppStream
-# repo, so the RPM installs offline with no EPEL or pip.
+BuildRequires:  python3
+BuildRequires:  python3-cryptography
+# GLib bindings for the askpass round-trip unit test (no GTK needed).
+BuildRequires:  python3-gobject-base
+BuildRequires:  desktop-file-utils
+
+# Every runtime dependency ships in the stock Rocky Linux 9/10 BaseOS and
+# AppStream repos (no EPEL, CRB or pip). Same package names on EL9 and EL10:
+#   python3-gobject  PyGObject (gi) incl. GLib/Gio/GdkPixbuf bindings
+#   gtk3             Gtk-3.0 / Gdk-3.0 typelibs
+#   vte291           Vte-2.91 (GTK3 VTE terminal widget) typelib
+#   libsecret        Secret-1 typelib (system keychain for saved passwords)
+#   python3-cryptography  AES-256-GCM + scrypt for the encrypted vault
+#   openssh-clients  ssh, which every session tab runs
 Requires:       python3
 Requires:       python3-gobject
 Requires:       gtk3
@@ -18,6 +32,8 @@ Requires:       vte291
 Requires:       openssh-clients
 Requires:       python3-cryptography
 Requires:       libsecret
+# Only needed for hosts set to the telnet protocol.
+Recommends:     telnet
 
 %description
 MultiSSH Manager is a native GTK tabbed SSH session manager for Rocky
@@ -28,6 +44,8 @@ exports or ~/.ssh/config.
 
 %prep
 %setup -q
+find . -name '__pycache__' -prune -exec rm -rf {} +
+find . -name '*.py[co]' -delete
 
 %build
 # Pure Python application: nothing to compile.
@@ -35,6 +53,9 @@ exports or ~/.ssh/config.
 %install
 install -d %{buildroot}%{_datadir}/%{name}
 cp -a multissh_manager run.py %{buildroot}%{_datadir}/%{name}/
+# Ship (and own) the bytecode so running the app as root never leaves
+# unowned __pycache__ files behind after "dnf remove".
+python3 -m compileall -q -s %{buildroot} -p / %{buildroot}%{_datadir}/%{name}/multissh_manager
 
 install -d %{buildroot}%{_bindir}
 cat > %{buildroot}%{_bindir}/%{name} <<'EOF'
@@ -43,9 +64,13 @@ exec python3 %{_datadir}/%{name}/run.py "$@"
 EOF
 chmod 0755 %{buildroot}%{_bindir}/%{name}
 
-install -Dm0644 %{name}.desktop %{buildroot}%{_datadir}/applications/%{name}.desktop
+desktop-file-install --dir=%{buildroot}%{_datadir}/applications %{name}.desktop
 install -Dm0644 multissh_manager/resources/logo.svg \
     %{buildroot}%{_datadir}/icons/hicolor/scalable/apps/%{name}.svg
+
+%check
+desktop-file-validate %{buildroot}%{_datadir}/applications/%{name}.desktop
+python3 -m unittest discover -s tests -q
 
 %files
 %{_datadir}/%{name}/
@@ -68,6 +93,10 @@ gtk-update-icon-cache -q %{_datadir}/icons/hicolor &>/dev/null || :
 - Passwords reach ssh via SSH_ASKPASS over a private socket; other ssh
   prompts (host keys, passphrases, OTP) appear as dialogs for those hosts.
 - Options dialog split into tabs.
+- Prebuilt noarch RPMs for Rocky Linux 9 (el9) and 10 (el10), plus SRPMs;
+  desktop file validated and unit tests run at build time; bytecode is
+  packaged so no unowned __pycache__ is left behind on removal.
+- Recommend telnet for telnet-protocol hosts.
 
 * Sat Nov 14 2026 Mike Anderson <18270693+mike0615@users.noreply.github.com> - 2.1.0-1
 - Edit > Options (replaces File > Preferences): choose the session data

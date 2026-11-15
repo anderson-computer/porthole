@@ -24,16 +24,18 @@ class FileVaultTests(unittest.TestCase):
     def test_roundtrip_and_no_plaintext(self):
         v = FileVault(self.path)
         v.create("correct horse")
-        v.set("h1", "Hunter2-secret")
+        v.set("host_id-1", "Hunter2-secret")
         raw = self.path.read_text()
+        # "_" and "-" are outside the base64 alphabet, so the host id can
+        # never appear by chance inside the random salt/nonce/ciphertext.
         self.assertNotIn("Hunter2", raw)
-        self.assertNotIn("h1", raw)
+        self.assertNotIn("host_id-1", raw)
         self.assertEqual(oct(os.stat(self.path).st_mode & 0o777), "0o600")
         v2 = FileVault(self.path)
         v2.unlock("correct horse")
-        self.assertEqual(v2.get("h1"), "Hunter2-secret")
-        v2.delete("h1")
-        self.assertIsNone(v2.get("h1"))
+        self.assertEqual(v2.get("host_id-1"), "Hunter2-secret")
+        v2.delete("host_id-1")
+        self.assertIsNone(v2.get("host_id-1"))
 
     def test_wrong_password(self):
         FileVault(self.path).create("correct horse")
