@@ -7,7 +7,7 @@ from pathlib import Path
 
 sys.path.insert(0, str(Path(__file__).resolve().parents[1]))
 
-from multissh_manager.activity_log import ActivityLog, redact  # noqa: E402
+from porthole.activity_log import ActivityLog, redact  # noqa: E402
 
 
 class RedactTests(unittest.TestCase):
@@ -69,12 +69,12 @@ class SettingsPersistTests(unittest.TestCase):
         with tempfile.TemporaryDirectory() as d:
             os.environ["XDG_CONFIG_HOME"] = d
             try:
-                import multissh_manager.models as m
-                import multissh_manager.settings as s
+                import porthole.models as m
+                import porthole.settings as s
                 importlib.reload(m)
                 importlib.reload(s)
                 st = s.Settings.load()
-                self.assertEqual(st.data_path, Path(d) / "multissh-manager" / "sessions.json")
+                self.assertEqual(st.data_path, Path(d) / "porthole" / "sessions.json")
                 st.data_file = str(Path(d) / "elsewhere" / "mine.json")
                 st.log_enabled = True
                 st.log_file = str(Path(d) / "act.log")

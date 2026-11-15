@@ -15,7 +15,7 @@ from __future__ import annotations
 import sys
 from html import escape
 from pathlib import Path
-from typing import List, Optional, Set
+from typing import List, Optional, Set, Tuple
 
 import gi
 
@@ -30,16 +30,17 @@ from . import about_config as about
 from .activity_log import activity, redact
 from .askpass_server import AskpassServer
 from .dialogs import (AskpassDialog, FolderDialog, HostDialog, MasterPasswordDialog,
-                      OptionsDialog, confirm, error)
+                      OptionsDialog, UsernameDialog, confirm, error)
 from .secret_store import (BACKEND_KEYRING, BACKEND_LABELS, BACKEND_NONE, BACKEND_VAULT,
                            FileVault, KeyringStore, VaultError, default_vault_path)
+from .migrate import migrate_legacy
 from .help_content import HELP_TOPICS, OVERVIEW, SHORTCUTS
-from .models import Folder, Host, SessionStore
+from .models import Folder, Host, SessionStore, local_user, ssh_config_user
 from .settings import Settings, default_data_path
 from .terminal_tab import TerminalTab
 
-APP_ID = "us.andersoncomputer.MultiSSHManager"
-APP_TITLE = "MultiSSH Manager"
+APP_ID = "us.andersoncomputer.Porthole"
+APP_TITLE = "Porthole"
 
 COL_ICON, COL_MARKUP, COL_KIND, COL_ID, COL_TIP = range(5)
 DND_TARGET = "MSM_TREE_ROW"
@@ -127,7 +128,11 @@ class MainWindow(Gtk.ApplicationWindow):
             for hid in self.settings.last_open_host_ids:
                 host = self.session_store.root.find_host(hid)
                 if host:
-                    self._open_terminal_tab(host)
+                    if host.needs_username:
+                        # Ask once the window is on screen, not during startup.
+                        GLib.idle_add(lambda h=host: self._open_terminal_tab(h) and False)
+                    else:
+                        self._open_terminal_tab(host)
         self._update_status()
 
     # ================================================================
@@ -151,7 +156,8 @@ class MainWindow(Gtk.ApplicationWindow):
             "find": lambda: self.search_entry.grab_focus(),
             "close-tab": self._close_current_tab,
             "reconnect": lambda: self._with_tab(lambda t: t.reconnect()),
-            "duplicate-tab": lambda: self._with_tab(lambda t: self._open_terminal_tab(t.host)),
+            "duplicate-tab": lambda: self._with_tab(
+                lambda t: self._open_terminal_tab(t.host, user=t.user_override)),
             "copy": self._copy,
             "paste": self._paste,
             "next-tab": lambda: self._cycle_tab(1),
@@ -439,6 +445,16 @@ class MainWindow(Gtk.ApplicationWindow):
                 activity.log("file", "open-xml", path=path, hosts=root.count()[1])
             else:
                 self.session_store = SessionStore.load(Path(path))
+                if self.session_store.path is None:  # flat/converted list
+                    self.store_path = None
+                    self.dirty = True
+                    self._status(f"Opened {Path(path).name} — use Save As to keep a native copy.")
+                    activity.log("file", "open-converted", path=path,
+                                 hosts=self.session_store.root.count()[1])
+                    self.collapsed.clear()
+                    self._refresh_tree()
+                    self._update_title()
+                    return
                 self.store_path = Path(path)
                 self.dirty = False
                 self._status(f"Opened {path}")
@@ -910,8 +926,42 @@ class MainWindow(Gtk.ApplicationWindow):
         self.tree_store.foreach(lambda m, p, it: out.append((m, it)) and False)
         return out
 
-    def _open_terminal_tab(self, host: Host) -> TerminalTab:
+    def _ask_username(self, host: Host) -> Tuple[bool, Optional[str]]:
+        """For an ssh host with no saved username, ask for one. Returns
+        (go_ahead, one_off_user). Skipped when ~/.ssh/config already sets a
+        User for the host. Ticking "Save" stores it on the host."""
+        if not host.needs_username:
+            return True, None
+        if ssh_config_user(host.hostname, host.port):
+            return True, None
+        in_tree = self.session_store.root.find_host(host.id) is host
+        label = host.name if host.name in (host.hostname, "") else f"{host.name} ({host.hostname})"
+        d = UsernameDialog(self, label, local_user(), can_remember=in_tree)
+        ok = d.run() == Gtk.ResponseType.OK
+        user, remember = d.get_user(), d.remember
+        d.destroy()
+        if not ok or not user:
+            self._status(f"Connection to {host.name} cancelled (no username).")
+            return False, None
+        if remember:
+            before = host.to_dict()
+            host.username = user
+            activity.log("tree", "edit-host", name=host.name,
+                         changes=describe_host_changes(before, host.to_dict()))
+            self._changed()
+            return True, None
+        return True, user
+
+    def _open_terminal_tab(self, host: Host, user: Optional[str] = None,
+                           ask: bool = True) -> Optional[TerminalTab]:
+        """Open a tab and connect. Returns None if the user cancelled the
+        username prompt."""
+        if user is None and ask:
+            go, user = self._ask_username(host)
+            if not go:
+                return None
         tab = TerminalTab(host, self.settings)
+        tab.user_override = user or None
         tab.env_provider = self._askpass_env
         tab.connect("user-input", self._on_tab_user_input)
         tab.connect("session-state-changed", lambda t: self._update_status())
@@ -922,8 +972,23 @@ class MainWindow(Gtk.ApplicationWindow):
         self.notebook.set_current_page(idx)
         tab.connect_session()
         tab.terminal.grab_focus()
-        self._status(f"Connecting to {host.name} ({host.target})…")
+        self._status(f"Connecting to {host.name} ({host.target_for(tab.user_override)})…")
         return tab
+
+    def connect_adhoc(self, host: Host) -> Optional[TerminalTab]:
+        """--connect / --host from the command line. Unless --auth/-i was
+        given, reuses a saved host with the same address, port and user (so
+        its saved password, key and options apply); otherwise opens a
+        one-off session that isn't added to the tree."""
+        explicit_auth = host.auth_method != "default" or bool(host.private_key_path)
+        for h in ([] if explicit_auth else self.session_store.root.walk_hosts()):
+            if (h.protocol == host.protocol and h.hostname == host.hostname
+                    and int(h.port) == int(host.port)
+                    and (not host.username or h.username in ("", host.username))):
+                activity.log("session", "cli-connect", host=h.name, saved=True)
+                return self._open_terminal_tab(h, user=host.username or None)
+        activity.log("session", "cli-connect", host=host.hostname, saved=False)
+        return self._open_terminal_tab(host)
 
     def _close_tab(self, tab: TerminalTab) -> bool:
         if tab.alive and self.settings.confirm_close_connected:
@@ -1347,7 +1412,7 @@ class MainWindow(Gtk.ApplicationWindow):
             return False
         try:
             if isinstance(store, KeyringStore):
-                store.set(host.id, password, f"MultiSSH Manager: {host.name} ({host.target})")
+                store.set(host.id, password, f"Porthole: {host.name} ({host.target})")
             else:
                 store.set(host.id, password)
         except VaultError as e:
@@ -1413,7 +1478,7 @@ class MainWindow(Gtk.ApplicationWindow):
                 if pw is None:
                     continue
                 if isinstance(dst, KeyringStore):
-                    dst.set(h.id, pw, f"MultiSSH Manager: {h.name} ({h.target})")
+                    dst.set(h.id, pw, f"Porthole: {h.name} ({h.target})")
                 else:
                     dst.set(h.id, pw)
                 src.delete(h.id)
@@ -1520,9 +1585,12 @@ class MainWindow(Gtk.ApplicationWindow):
 
 
 class Application(Gtk.Application):
-    def __init__(self, open_path: Optional[str] = None):
+    def __init__(self, open_path: Optional[str] = None, connect_hosts: Optional[List[Host]] = None):
         super().__init__(application_id=APP_ID, flags=Gio.ApplicationFlags.NON_UNIQUE)
         self.open_path = open_path
+        self.connect_hosts = list(connect_hosts or [])
+        # Copy MultiSSH Manager 2.x data on first run (before loading settings).
+        self.migration_note = migrate_legacy()
         self.settings = Settings.load()
 
     def do_startup(self):
@@ -1544,9 +1612,16 @@ class Application(Gtk.Application):
             win = MainWindow(self, self.open_path)
             if self._log_error:
                 win._status(self._log_error)
+            elif self.migration_note:
+                win._status(self.migration_note)
+            if self.migration_note:
+                activity.log("app", "migrated", detail=self.migration_note)
         win.show_all()
         win._update_status()
         win.present()
+        hosts, self.connect_hosts = self.connect_hosts, []
+        for h in hosts:
+            GLib.idle_add(lambda h=h: win.connect_adhoc(h) and False)
 
     def _on_quit(self, *_):
         win = self.props.active_window
@@ -1556,14 +1631,14 @@ class Application(Gtk.Application):
 
 def main(argv=None):
     argv = list(sys.argv if argv is None else argv)
-    if len(argv) > 1 and argv[1] in ("-h", "--help"):
-        print(f"usage: multissh-manager [SESSION_FILE]\n\n{APP_TITLE} {__version__}")
-        return 0
-    if len(argv) > 1 and argv[1] in ("-V", "--version"):
-        print(__version__)
-        return 0
-    open_path = argv[1] if len(argv) > 1 else None
-    return Application(open_path).run(argv[:1])
+    from .cli import build_parser, hosts_from_args
+    parser = build_parser(f"{APP_TITLE} {__version__}")
+    args = parser.parse_args(argv[1:])
+    try:
+        hosts = hosts_from_args(args)
+    except ValueError as e:
+        parser.error(str(e))
+    return Application(args.session_file, hosts).run(argv[:1])
 
 
 if __name__ == "__main__":

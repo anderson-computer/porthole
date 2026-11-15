@@ -1,4 +1,9 @@
-# MultiSSH Manager
+# Porthole
+
+> **Formerly MultiSSH Manager.** Version 3.0.0 renamed the app, package and
+> command to `porthole`. Upgrading with dnf replaces `multissh-manager`, keeps
+> a `multissh-manager` command as a symlink, and copies your old settings,
+> sessions and vault on first run (see [Upgrading](#upgrading-from-multissh-manager-2x)).
 
 A native Linux, tabbed SSH session manager for Rocky Linux 9 and 10, in the
 spirit of Multi PuTTY Manager on Windows: a folder tree of saved hosts on the
@@ -28,7 +33,7 @@ and known_hosts all behave exactly as they do in a normal shell.
 - **Auto-save** with atomic writes, a `.bak` copy of the previous version,
   and `0600` permissions.
 - **Terminal-friendly shortcuts.** App shortcuts use Ctrl+Shift, so Ctrl+W,
-  Ctrl+O, and Ctrl+S still reach the shell (unlike 1.x).
+  Ctrl+O, and Ctrl+S still reach the shell.
 - **Saved passwords** in your login keychain (GNOME Keyring / Secret
   Service) or an AES-256 encrypted vault file with a master password, which
   works offline and on machines without a keyring. ssh gets the password
@@ -47,14 +52,28 @@ BaseOS/AppStream repos. You don't need EPEL or pip.
 
 ### RPM (recommended)
 
-Download the RPM for your release from the
-[Releases](https://github.com/mike0615/multissh-manager-v2/releases) page and
-install it with dnf, which pulls the dependencies from the stock repos:
+Install straight from the
+[v3.0.0 release](https://github.com/mike0615/porthole/releases/tag/v3.0.0);
+dnf pulls the dependencies from the stock repos:
 
 ```bash
-sudo dnf install ./multissh-manager-2.2.0-1.el9.noarch.rpm    # Rocky 9
-sudo dnf install ./multissh-manager-2.2.0-1.el10.noarch.rpm   # Rocky 10
+# Rocky 9
+sudo dnf install https://github.com/mike0615/porthole/releases/download/v3.0.0/porthole-3.0.0-1.el9.noarch.rpm
+# Rocky 10
+sudo dnf install https://github.com/mike0615/porthole/releases/download/v3.0.0/porthole-3.0.0-1.el10.noarch.rpm
 ```
+
+### Command line
+
+```bash
+porthole                                  # your saved sessions
+porthole --connect admin@10.0.0.5:2222    # open a tab and connect now
+porthole --host 10.0.0.5 --user admin --port 2222
+porthole --connect 10.0.0.5               # asks for the username
+```
+
+Anything missing (username, password) is asked for. `porthole --help`
+lists every option.
 
 To build the RPMs yourself:
 
@@ -67,7 +86,7 @@ sudo dnf install -y rpm-build desktop-file-utils python3-cryptography python3-go
 ### Script
 
 ```bash
-sudo ./install.sh                        # installs to /opt/multissh-manager
+sudo ./install.sh                        # installs to /opt/porthole
 sudo ./install.sh --uninstall
 ```
 
@@ -78,28 +97,39 @@ sudo dnf install -y python3-gobject gtk3 vte291 openssh-clients python3-cryptogr
 python3 run.py [SESSION_FILE]
 ```
 
-### Upgrading from 1.x
+### Upgrading from MultiSSH Manager 2.x
 
-Your `~/.config/multissh-manager/sessions.json` loads unchanged. If 1.x was
-installed with `install.sh`, remove it first (`sudo rm -rf
-/opt/multissh-manager /usr/local/bin/multissh-manager /etc/multissh-manager`).
+`sudo dnf install <porthole RPM URL above>` replaces the `multissh-manager`
+package (`Obsoletes: multissh-manager < 3.0.0`). `/usr/bin/multissh-manager`
+stays as a symlink to `porthole`, so scripts and Sonar keep working.
 
-Shortcuts changed: Open, Save, and Close Tab are now Ctrl+Shift+O / S / W.
+The first time Porthole starts, and only if `~/.config/porthole` doesn't
+exist yet, it **copies** `~/.config/multissh-manager` (settings, sessions,
+vault, backups) to `~/.config/porthole` and `~/.local/state/multissh-manager`
+to `~/.local/state/porthole`. Options that pointed inside the old folders are
+re-pointed at the copies. The originals are never changed or removed.
+Passwords saved in the keychain by MultiSSH Manager are found automatically
+and copied to Porthole's own keychain entry the first time they're used.
+
+If MultiSSH Manager 1.x was installed with `install.sh`, remove it first
+(`sudo rm -rf /opt/multissh-manager /usr/local/bin/multissh-manager /etc/multissh-manager`).
 
 ## Files
 
 | Path | Purpose |
 |---|---|
-| `~/.config/multissh-manager/sessions.json` | Your session tree (auto-saved; location changeable in Options) |
-| `~/.config/multissh-manager/settings.json` | Options and window state |
-| `~/.local/state/multissh-manager/activity.log` | Activity log, when enabled (location changeable) |
-| `~/.config/multissh-manager/vault.json` | Encrypted password vault, when used (location changeable) |
+| `~/.config/porthole/sessions.json` | Your session tree (auto-saved; location changeable in Options) |
+| `~/.config/porthole/settings.json` | Options and window state |
+| `~/.local/state/porthole/activity.log` | Activity log, when enabled (location changeable) |
+| `~/.config/porthole/vault.json` | Encrypted password vault, when used (location changeable) |
 
 ## Source layout
 
 ```
 run.py                      entry point (python3 run.py [file])
-multissh_manager/
+porthole/
+  cli.py                    command-line options (--connect, --host, ...)
+  migrate.py                first-run copy of MultiSSH Manager 2.x data
   app.py                    main window: tree, tabs, broadcast, menus, actions
   terminal_tab.py           one session tab: VTE, state, reconnect, post-login
   dialogs.py                host / folder / preferences dialogs

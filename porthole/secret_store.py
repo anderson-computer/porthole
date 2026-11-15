@@ -46,7 +46,10 @@ def default_vault_path() -> Path:
 # Encrypted file vault
 # ---------------------------------------------------------------------------
 class FileVault:
-    FORMAT = "multissh-manager-vault"
+    FORMAT = "porthole-vault"
+    # Vaults written by MultiSSH Manager 2.x (before the rename) still open;
+    # they're re-written in the Porthole format on the next change.
+    LEGACY_FORMATS = ("multissh-manager-vault",)
     VERSION = 1
     # scrypt cost: ~0.1-0.3 s on a desktop CPU, 32 MiB of memory.
     SCRYPT_N, SCRYPT_R, SCRYPT_P = 2 ** 15, 8, 1
@@ -92,8 +95,9 @@ class FileVault:
         from cryptography.hazmat.primitives.ciphers.aead import AESGCM
         try:
             blob = json.loads(self.path.read_text(encoding="utf-8"))
-            if blob.get("format") != self.FORMAT:
-                raise VaultError(f"{self.path} is not a MultiSSH Manager vault")
+            fmt = blob.get("format")
+            if fmt != self.FORMAT and fmt not in self.LEGACY_FORMATS:
+                raise VaultError(f"{self.path} is not a Porthole vault")
             kdf = blob["kdf"]
             salt = base64.b64decode(kdf["salt"])
             nonce = base64.b64decode(blob["nonce"])
@@ -104,7 +108,7 @@ class FileVault:
         key = Scrypt(salt=salt, length=32, n=int(kdf["n"]), r=int(kdf["r"]),
                      p=int(kdf["p"])).derive(master.encode("utf-8"))
         try:
-            plain = AESGCM(key).decrypt(nonce, ct, self.FORMAT.encode())
+            plain = AESGCM(key).decrypt(nonce, ct, str(fmt).encode())
         except InvalidTag:
             raise VaultError("Wrong master password (or the vault file was modified).")
         self._data = json.loads(plain.decode("utf-8"))
@@ -161,10 +165,14 @@ class FileVault:
 # Secret Service keychain
 # ---------------------------------------------------------------------------
 class KeyringStore:
-    SCHEMA_NAME = "us.andersoncomputer.MultiSSHManager.Password"
+    SCHEMA_NAME = "us.andersoncomputer.Porthole.Password"
+    # Entries saved by MultiSSH Manager 2.x. Read as a fallback and copied to
+    # the Porthole schema on first use; the old entries are left in place.
+    LEGACY_SCHEMA_NAME = "us.andersoncomputer.MultiSSHManager.Password"
 
     def __init__(self):
         self._schema = None
+        self._legacy_schema = None
         self.error: Optional[str] = None
         try:
             import gi
@@ -173,6 +181,9 @@ class KeyringStore:
             self._Secret = Secret
             self._schema = Secret.Schema.new(
                 self.SCHEMA_NAME, Secret.SchemaFlags.NONE,
+                {"host_id": Secret.SchemaAttributeType.STRING})
+            self._legacy_schema = Secret.Schema.new(
+                self.LEGACY_SCHEMA_NAME, Secret.SchemaFlags.NONE,
                 {"host_id": Secret.SchemaAttributeType.STRING})
         except (ImportError, ValueError) as e:
             self.error = f"libsecret is not available: {e}"
@@ -201,7 +212,16 @@ class KeyringStore:
 
     def get(self, host_id: str) -> Optional[str]:
         try:
-            return self._Secret.password_lookup_sync(self._schema, {"host_id": host_id}, None)
+            pw = self._Secret.password_lookup_sync(self._schema, {"host_id": host_id}, None)
+            if pw is None and self._legacy_schema is not None:
+                pw = self._Secret.password_lookup_sync(
+                    self._legacy_schema, {"host_id": host_id}, None)
+                if pw is not None:
+                    try:  # copy forward; keep the MultiSSH Manager entry
+                        self.set(host_id, pw, f"Porthole ({host_id})")
+                    except VaultError:
+                        pass
+            return pw
         except Exception as e:
             raise VaultError(f"Keychain lookup failed: {e}") from e
 
@@ -209,7 +229,7 @@ class KeyringStore:
         try:
             ok = self._Secret.password_store_sync(
                 self._schema, {"host_id": host_id}, self._Secret.COLLECTION_DEFAULT,
-                label or f"MultiSSH Manager ({host_id})", password, None)
+                label or f"Porthole ({host_id})", password, None)
         except Exception as e:
             raise VaultError(f"Keychain store failed: {e}") from e
         if not ok:
@@ -218,5 +238,9 @@ class KeyringStore:
     def delete(self, host_id: str) -> None:
         try:
             self._Secret.password_clear_sync(self._schema, {"host_id": host_id}, None)
+            # Forget the pre-rename copy too, or the fallback in get() would
+            # bring the password back.
+            if self._legacy_schema is not None:
+                self._Secret.password_clear_sync(self._legacy_schema, {"host_id": host_id}, None)
         except Exception as e:
             raise VaultError(f"Keychain delete failed: {e}") from e

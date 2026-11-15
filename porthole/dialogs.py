@@ -12,7 +12,7 @@ gi.require_version("Gtk", "3.0")
 gi.require_version("Gdk", "3.0")
 from gi.repository import GLib, Gtk, Pango  # noqa: E402
 
-from .models import AUTH_METHODS, PROTOCOLS, Folder, Host
+from .models import AUTH_METHODS, PROTOCOLS, Folder, Host, local_user, parse_target
 from .activity_log import default_log_path
 from .secret_store import (BACKEND_KEYRING, BACKEND_LABELS, BACKEND_NONE, BACKEND_VAULT,
                            MIN_MASTER_LEN, default_vault_path)
@@ -82,16 +82,18 @@ class HostDialog(Gtk.Dialog):
             "Host / IP", Gtk.Entry(text=h.hostname, activates_default=True,
                                    placeholder_text="server.example.com or ssh-config alias"))
 
-        port_user = Gtk.Box(spacing=6)
+        # Username gets its own labelled row (in MultiSSH Manager 2.2.0 it sat unlabelled to
+        # the right of Port and was easy to miss).
+        self.username_entry = add_row(
+            "Username", Gtk.Entry(text=h.username, activates_default=True,
+                                  placeholder_text=f"blank = ask when connecting (e.g. {local_user() or 'root'})"),
+            "Login name on the remote host. Leave blank to be asked each time "
+            "you connect. You can also type user@host in Host / IP.")
         self.port_spin = Gtk.SpinButton.new_with_range(1, 65535, 1)
         self.port_spin.set_value(h.port or 22)
-        self.username_entry = Gtk.Entry(text=h.username, activates_default=True,
-                                        placeholder_text="(ssh default)")
-        self.username_entry.set_hexpand(True)
-        port_user.pack_start(self.port_spin, False, False, 0)
-        port_user.pack_start(Gtk.Label(label="User"), False, False, 4)
-        port_user.pack_start(self.username_entry, True, True, 0)
-        add_row("Port", port_user)
+        port_box = Gtk.Box(spacing=6)
+        port_box.pack_start(self.port_spin, False, False, 0)
+        add_row("Port", port_box)
 
         self.protocol_combo = Gtk.ComboBoxText()
         for p in PROTOCOLS:
@@ -186,11 +188,20 @@ class HostDialog(Gtk.Dialog):
     def _collect(self) -> Host:
         h = Host.from_dict(self.host.to_dict())
         h.hostname = self.hostname_entry.get_text().strip()
+        h.username = self.username_entry.get_text().strip()
+        try:
+            user, host, port = parse_target(h.hostname)
+        except ValueError:
+            user, host, port = "", h.hostname, None
+        if host and (user or port):
+            h.hostname = host
+            h.username = h.username or user
         h.name = self.name_entry.get_text().strip()
         if not h.name or h.name == "New Host":
             h.name = h.hostname or "New Host"
         h.port = int(self.port_spin.get_value())
-        h.username = self.username_entry.get_text().strip()
+        if host and port and h.port in (22, 23):
+            h.port = port
         h.protocol = self.protocol_combo.get_active_id() or "ssh"
         h.auth_method = self.auth_combo.get_active_id() or "default"
         h.private_key_path = self.key_entry.get_text().strip()
@@ -226,7 +237,10 @@ class HostDialog(Gtk.Dialog):
         if error:
             self.preview.set_markup(f"<span foreground='#e5534b'>{error}</span>")
         else:
-            self.preview.set_text("Runs: " + h.command_preview())
+            text = "Runs: " + h.command_preview()
+            if h.needs_username:
+                text += "\n(No username saved: you'll be asked for one when you connect.)"
+            self.preview.set_text(text)
         self.ok_button.set_sensitive(error is None)
 
     def get_host(self) -> Host:
@@ -522,6 +536,49 @@ class MasterPasswordDialog(Gtk.Dialog):
 
     def new_password(self) -> str:
         return self.new1.get_text() if self.new1 else ""
+
+
+class UsernameDialog(Gtk.Dialog):
+    """Asks for the login name for a host that has none saved."""
+
+    def __init__(self, parent, host_label: str, default_user: str = "",
+                 can_remember: bool = True):
+        super().__init__(title=f"Username for {host_label}", transient_for=parent,
+                         modal=True, destroy_with_parent=True)
+        self.set_default_size(420, -1)
+        box = Gtk.Box(orientation=Gtk.Orientation.VERTICAL, spacing=8, margin=14)
+        self.get_content_area().add(box)
+        lbl = Gtk.Label(xalign=0, wrap=True, max_width_chars=60)
+        lbl.set_markup(f"No username is saved for <b>{GLib.markup_escape_text(host_label)}</b>. "
+                       "Log in as:")
+        box.pack_start(lbl, False, False, 0)
+        self.entry = Gtk.Entry(text=default_user, activates_default=True,
+                               placeholder_text="username")
+        box.pack_start(self.entry, False, False, 0)
+        self.remember_check = None
+        if can_remember:
+            self.remember_check = Gtk.CheckButton(label="Save this username for the host")
+            self.remember_check.set_active(True)
+            box.pack_start(self.remember_check, False, False, 0)
+        self.add_button("_Cancel", Gtk.ResponseType.CANCEL)
+        self.ok = self.add_button("_Connect", Gtk.ResponseType.OK)
+        self.ok.get_style_context().add_class("suggested-action")
+        self.set_default_response(Gtk.ResponseType.OK)
+        self.entry.connect("changed", lambda e: self.ok.set_sensitive(self._valid()))
+        self.ok.set_sensitive(self._valid())
+        self.show_all()
+        self.entry.grab_focus()
+
+    def _valid(self) -> bool:
+        t = self.entry.get_text().strip()
+        return bool(t) and not t.startswith("-") and not any(c.isspace() or c == "@" for c in t)
+
+    def get_user(self) -> Optional[str]:
+        return self.entry.get_text().strip() if self._valid() else None
+
+    @property
+    def remember(self) -> bool:
+        return bool(self.remember_check and self.remember_check.get_active())
 
 
 class AskpassDialog(Gtk.Dialog):

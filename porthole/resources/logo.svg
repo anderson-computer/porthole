@@ -1,0 +1,37 @@
+<?xml version="1.0" encoding="UTF-8"?>
+<svg xmlns="http://www.w3.org/2000/svg" width="128" height="128" viewBox="0 0 128 128">
+  <!-- Porthole icon: a riveted ship's porthole looking onto a shell prompt. -->
+  <defs>
+    <radialGradient id="glass" cx="0.38" cy="0.32" r="0.8">
+      <stop offset="0" stop-color="#1f4a5c"/>
+      <stop offset="0.65" stop-color="#0f2430"/>
+      <stop offset="1" stop-color="#081319"/>
+    </radialGradient>
+    <linearGradient id="brass" x1="0" y1="0" x2="1" y2="1">
+      <stop offset="0" stop-color="#f0c86a"/>
+      <stop offset="0.5" stop-color="#c4912e"/>
+      <stop offset="1" stop-color="#8a6320"/>
+    </linearGradient>
+  </defs>
+  <circle cx="64" cy="64" r="60" fill="url(#brass)"/>
+  <circle cx="64" cy="64" r="60" fill="none" stroke="#5e4214" stroke-width="2"/>
+  <circle cx="111.3" cy="76.7" r="3.2" fill="#f3d58a" stroke="#7a5a1c" stroke-width="1"/>
+  <circle cx="98.6" cy="98.6" r="3.2" fill="#f3d58a" stroke="#7a5a1c" stroke-width="1"/>
+  <circle cx="76.7" cy="111.3" r="3.2" fill="#f3d58a" stroke="#7a5a1c" stroke-width="1"/>
+  <circle cx="51.3" cy="111.3" r="3.2" fill="#f3d58a" stroke="#7a5a1c" stroke-width="1"/>
+  <circle cx="29.4" cy="98.6" r="3.2" fill="#f3d58a" stroke="#7a5a1c" stroke-width="1"/>
+  <circle cx="16.7" cy="76.7" r="3.2" fill="#f3d58a" stroke="#7a5a1c" stroke-width="1"/>
+  <circle cx="16.7" cy="51.3" r="3.2" fill="#f3d58a" stroke="#7a5a1c" stroke-width="1"/>
+  <circle cx="29.4" cy="29.4" r="3.2" fill="#f3d58a" stroke="#7a5a1c" stroke-width="1"/>
+  <circle cx="51.3" cy="16.7" r="3.2" fill="#f3d58a" stroke="#7a5a1c" stroke-width="1"/>
+  <circle cx="76.7" cy="16.7" r="3.2" fill="#f3d58a" stroke="#7a5a1c" stroke-width="1"/>
+  <circle cx="98.6" cy="29.4" r="3.2" fill="#f3d58a" stroke="#7a5a1c" stroke-width="1"/>
+  <circle cx="111.3" cy="51.3" r="3.2" fill="#f3d58a" stroke="#7a5a1c" stroke-width="1"/>
+  <circle cx="64" cy="64" r="40" fill="#5e4214"/>
+  <circle cx="64" cy="64" r="37" fill="url(#glass)"/>
+  <path d="M44 52 L58 64 L44 76" fill="none" stroke="#39c5bb" stroke-width="6"
+        stroke-linecap="round" stroke-linejoin="round"/>
+  <rect x="62" y="72" width="22" height="6" rx="3" fill="#e6edf3"/>
+  <path d="M40 46 A30 30 0 0 1 70 32" fill="none" stroke="#ffffff" stroke-opacity="0.35"
+        stroke-width="4" stroke-linecap="round"/>
+</svg>

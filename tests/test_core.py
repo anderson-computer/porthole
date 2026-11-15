@@ -7,8 +7,8 @@ from pathlib import Path
 
 sys.path.insert(0, str(Path(__file__).resolve().parents[1]))
 
-from multissh_manager import importer, ssh_config  # noqa: E402
-from multissh_manager.models import Folder, Host, SessionStore  # noqa: E402
+from porthole import importer, ssh_config  # noqa: E402
+from porthole.models import Folder, Host, SessionStore  # noqa: E402
 
 
 class HostArgvTests(unittest.TestCase):
@@ -82,7 +82,7 @@ class StoreTests(unittest.TestCase):
             self.assertEqual(loaded.root.hosts[0].hostname, "x")
 
     def test_loads_v1_file(self):
-        v1 = {"format": "multissh-manager", "version": 1, "root": {
+        v1 = {"format": "porthole", "version": 1, "root": {
             "id": "root", "name": "Sessions", "folders": [], "hosts": [
                 {"id": "abc", "name": "old", "hostname": "o", "port": 22,
                  "username": "", "protocol": "ssh", "auth_method": "password",

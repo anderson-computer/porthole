@@ -9,8 +9,8 @@ from pathlib import Path
 
 sys.path.insert(0, str(Path(__file__).resolve().parents[1]))
 
-from multissh_manager.models import Host  # noqa: E402
-from multissh_manager.secret_store import FileVault, VaultError  # noqa: E402
+from porthole.models import Host  # noqa: E402
+from porthole.secret_store import FileVault, VaultError  # noqa: E402
 
 
 class FileVaultTests(unittest.TestCase):
@@ -87,7 +87,7 @@ class AskpassTests(unittest.TestCase):
         import gi
         gi.require_version("GLib", "2.0")
         from gi.repository import GLib
-        from multissh_manager.askpass_server import HELPER, AskpassServer
+        from porthole.askpass_server import HELPER, AskpassServer
 
         with tempfile.TemporaryDirectory() as d:
             os.environ["XDG_RUNTIME_DIR"] = d
@@ -118,7 +118,7 @@ class AskpassTests(unittest.TestCase):
             self.assertEqual(seen, [("bob@h's password: ", "")])
             self.assertNotEqual(out["bad"].returncode, 0)
             self.assertEqual(out["bad"].stdout, "")
-            self.assertEqual(oct(os.stat(Path(d) / "multissh-manager").st_mode & 0o777), "0o700")
+            self.assertEqual(oct(os.stat(Path(d) / "porthole").st_mode & 0o777), "0o700")
 
 
 if __name__ == "__main__":

@@ -1,15 +1,20 @@
-%{!?app_version: %global app_version 2.2.0}
+%{!?app_version: %global app_version 3.0.0}
 %global debug_package %{nil}
 
-Name:           multissh-manager
+Name:           porthole
 Version:        %{app_version}
 Release:        1%{?dist}
 Summary:        Tabbed SSH session manager with folders and multi-session broadcast
 
 License:        MIT
-URL:            https://github.com/mike0615/multissh-manager-v2
+URL:            https://github.com/mike0615/porthole
 Source0:        %{name}-%{version}.tar.gz
 BuildArch:      noarch
+
+# Porthole was called MultiSSH Manager (package multissh-manager) up to 2.2.0.
+# dnf upgrade replaces it; the multissh-manager command keeps working.
+Obsoletes:      multissh-manager < 3.0.0
+Provides:       multissh-manager = %{version}-%{release}
 
 BuildRequires:  python3
 BuildRequires:  python3-cryptography
@@ -36,7 +41,7 @@ Requires:       libsecret
 Recommends:     telnet
 
 %description
-MultiSSH Manager is a native GTK tabbed SSH session manager for Rocky
+Porthole is a native GTK tabbed SSH session manager for Rocky
 Linux: a searchable folder tree of saved hosts, each connection in its own
 tab running the system ssh client, per-tab broadcast with live keystroke
 mirroring, reconnect-in-place, and import from MultiPuTTY / PuTTY CM XML
@@ -52,10 +57,10 @@ find . -name '*.py[co]' -delete
 
 %install
 install -d %{buildroot}%{_datadir}/%{name}
-cp -a multissh_manager run.py %{buildroot}%{_datadir}/%{name}/
+cp -a porthole run.py %{buildroot}%{_datadir}/%{name}/
 # Ship (and own) the bytecode so running the app as root never leaves
 # unowned __pycache__ files behind after "dnf remove".
-python3 -m compileall -q -s %{buildroot} -p / %{buildroot}%{_datadir}/%{name}/multissh_manager
+python3 -m compileall -q -s %{buildroot} -p / %{buildroot}%{_datadir}/%{name}/porthole
 
 install -d %{buildroot}%{_bindir}
 cat > %{buildroot}%{_bindir}/%{name} <<'EOF'
@@ -63,9 +68,11 @@ cat > %{buildroot}%{_bindir}/%{name} <<'EOF'
 exec python3 %{_datadir}/%{name}/run.py "$@"
 EOF
 chmod 0755 %{buildroot}%{_bindir}/%{name}
+# Old command name (used by scripts and by Sonar's default multissh_path).
+ln -s %{name} %{buildroot}%{_bindir}/multissh-manager
 
 desktop-file-install --dir=%{buildroot}%{_datadir}/applications %{name}.desktop
-install -Dm0644 multissh_manager/resources/logo.svg \
+install -Dm0644 porthole/resources/logo.svg \
     %{buildroot}%{_datadir}/icons/hicolor/scalable/apps/%{name}.svg
 
 %check
@@ -75,6 +82,7 @@ python3 -m unittest discover -s tests -q
 %files
 %{_datadir}/%{name}/
 %{_bindir}/%{name}
+%{_bindir}/multissh-manager
 %{_datadir}/applications/%{name}.desktop
 %{_datadir}/icons/hicolor/scalable/apps/%{name}.svg
 %license LICENSE
@@ -87,6 +95,25 @@ gtk-update-icon-cache -q %{_datadir}/icons/hicolor &>/dev/null || :
 gtk-update-icon-cache -q %{_datadir}/icons/hicolor &>/dev/null || :
 
 %changelog
+* Sat Nov 14 2026 Mike Anderson <mike@andersoncomputer.us> - 3.0.0-1
+- Renamed from MultiSSH Manager to Porthole: package porthole, command
+  /usr/bin/porthole (multissh-manager kept as a symlink), new icon,
+  config in ~/.config/porthole. Obsoletes multissh-manager < 3.0.0.
+- First run copies ~/.config/multissh-manager (settings, sessions, vault)
+  and the activity log to the new locations, leaving the originals; saved
+  keychain passwords are read from the old entries and copied forward.
+- Fix: the Add/Edit Host form now has its own labelled Username row; in
+  2.2.0 it sat unlabelled beside Port and was easy to miss, so hosts were
+  saved without a user and ssh connected as the local login.
+- Connecting to an ssh host with no saved username asks for one
+  (prefilled with the local login, optional "save for this host"),
+  unless ~/.ssh/config sets a User for it.
+- user@host and host:port typed into Host / IP are split into the fields.
+- Session files using other key names (user, login, host, key_file...) and
+  flat converter lists ({"sessions": [...]}) load with the user intact.
+- New command line: --connect [USER@]HOST[:PORT] (repeatable), --host,
+  --user, --port, --auth, -i, --name; opens a tab and connects at once.
+
 * Sat Nov 14 2026 Mike Anderson <18270693+mike0615@users.noreply.github.com> - 2.2.0-1
 - Saved host passwords in the system keychain (libsecret) or an AES-256-GCM
   encrypted vault file with a scrypt-derived master password.

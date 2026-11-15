@@ -1,21 +1,21 @@
 #!/usr/bin/env bash
-# Build multissh-manager RPMs (noarch binary RPM + source RPM).
+# Build porthole RPMs (noarch binary RPM + source RPM).
 #
 #   ./packaging/build-rpm.sh          on Rocky/RHEL 9 or 10: native rpmbuild,
 #                                     produces -1.el9 or -1.el10 for this host
 #   ./packaging/build-rpm.sh 9 10     anywhere with podman or docker: builds in
 #                                     rockylinux:9 and rockylinux:10 containers
 #
-# Output: out/multissh-manager-<ver>-1.elN.noarch.rpm
-#         out/multissh-manager-<ver>-1.elN.src.rpm
-#         out/multissh-manager-<ver>.tar.gz
+# Output: out/porthole-<ver>-1.elN.noarch.rpm
+#         out/porthole-<ver>-1.elN.src.rpm
+#         out/porthole-<ver>.tar.gz
 # Native builds need: sudo dnf install -y rpm-build desktop-file-utils python3-cryptography python3-gobject-base
 set -euo pipefail
 
 SCRIPT_DIR="$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)"
 PROJECT_DIR="$(cd "${SCRIPT_DIR}/.." && pwd)"
-NAME="multissh-manager"
-VERSION="$(sed -n 's/^__version__ = "\(.*\)"/\1/p' "${PROJECT_DIR}/multissh_manager/__init__.py")"
+NAME="porthole"
+VERSION="$(sed -n 's/^__version__ = "\(.*\)"/\1/p' "${PROJECT_DIR}/porthole/__init__.py")"
 OUT="${PROJECT_DIR}/out"
 
 if [ $# -gt 0 ]; then
@@ -46,7 +46,7 @@ trap 'rm -rf "${TOPDIR}"' EXIT
 mkdir -p "${TOPDIR}"/{SPECS,SOURCES,BUILD,BUILDROOT,RPMS,SRPMS} "${OUT}"
 SRC_DIR="${TOPDIR}/stage/${NAME}-${VERSION}"
 mkdir -p "${SRC_DIR}"
-cp -a "${PROJECT_DIR}"/{multissh_manager,tests,packaging,run.py,install.sh,multissh-manager.desktop,README.md,HELP.md,LICENSE} "${SRC_DIR}/"
+cp -a "${PROJECT_DIR}"/{porthole,tests,packaging,run.py,install.sh,porthole.desktop,README.md,HELP.md,LICENSE} "${SRC_DIR}/"
 find "${SRC_DIR}" -name __pycache__ -prune -exec rm -rf {} +
 find "${SRC_DIR}" -name '*.py[co]' -delete
 tar -czf "${TOPDIR}/SOURCES/${NAME}-${VERSION}.tar.gz" -C "${TOPDIR}/stage" "${NAME}-${VERSION}"

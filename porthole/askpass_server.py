@@ -42,10 +42,10 @@ class AskpassServer:
             return
         base = os.environ.get("XDG_RUNTIME_DIR")
         if base and os.path.isdir(base):
-            d = Path(base) / "multissh-manager"
+            d = Path(base) / "porthole"
             d.mkdir(mode=0o700, exist_ok=True)
         else:
-            d = Path(tempfile.mkdtemp(prefix="multissh-manager-"))
+            d = Path(tempfile.mkdtemp(prefix="porthole-"))
         os.chmod(d, 0o700)
         self._dir = d
         self.path = d / f"askpass-{os.getpid()}.sock"

@@ -5,7 +5,7 @@ from __future__ import annotations
 from typing import List, Tuple
 
 OVERVIEW = """\
-MultiSSH Manager keeps a folder tree of saved hosts on the left and opens \
+Porthole keeps a folder tree of saved hosts on the left and opens \
 one real terminal per connection as a tab on the right. Every tab runs your \
 system's own ssh client, so ~/.ssh/config, ssh-agent, keys and ProxyJump \
 all work exactly as they do in a normal terminal.
@@ -18,7 +18,7 @@ press Connect to open them all.
   3. Tick the checkbox on each tab you want to control together, then type \
 in the broadcast bar (Enter sends), or turn on Live typing to mirror every \
 keystroke.
-  4. Changes save automatically to ~/.config/multissh-manager/sessions.json.
+  4. Changes save automatically to ~/.config/porthole/sessions.json.
 """
 
 SHORTCUTS: List[Tuple[str, str]] = [
@@ -51,7 +51,30 @@ HELP_TOPICS: List[Tuple[str, str]] = [
         "  • SSH agent only — same as Default; use your agent's keys.\n"
         "  • Password only — disables public-key auth for this host.\n"
         "Jump host is passed to ssh -J. Extra ssh args respect shell quoting, "
-        "e.g. -o \"ProxyCommand=nc -X 5 -x proxy:1080 %h %p\".",
+        "e.g. -o \"ProxyCommand=nc -X 5 -x proxy:1080 %h %p\".\n\n"
+        "Username: the login name on the remote host; the command connects to "
+        "user@host. You can also type user@host or host:port into Host / IP. "
+        "If Username is blank, you're asked for it when you connect (prefilled "
+        "with your local login), unless ~/.ssh/config sets a User for that host. "
+        "Tick \"Save this username\" to keep it on the host.",
+    ),
+    (
+        "Command line",
+        "porthole [SESSION_FILE] [--connect [USER@]HOST[:PORT]] "
+        "[--host HOST] [--user USER] [--port PORT] [--auth METHOD] [-i KEY] [--name NAME]\n\n"
+        "  porthole --connect admin@10.0.0.5:2222\n"
+        "  porthole --host 10.0.0.5 --user admin --port 2222\n"
+        "  porthole --connect 10.0.0.5          (asks for the username)\n\n"
+        "--connect opens a tab and connects straight away; it can be repeated. "
+        "Anything missing is asked for: the username in a dialog, the password "
+        "by ssh in the terminal (or supplied from the keychain/vault for a saved "
+        "host). Without --auth or -i, a saved host with the same address, port and user is used, "
+        "with its saved password and options; otherwise the session is not "
+        "added to your tree. IPv6: --connect admin@[fe80::1]:22.",
+    ),
+    (
+        "Formerly MultiSSH Manager",
+        "Porthole was called MultiSSH Manager up to version 2.2.0. On first start, if ~/.config/porthole doesn't exist, Porthole copies ~/.config/multissh-manager (settings, sessions, vault) and ~/.local/state/multissh-manager (activity log) to the new folders and leaves the originals untouched. Keychain passwords saved by MultiSSH Manager are found automatically and copied to Porthole's own entry the first time they're used. The multissh-manager command still works; it's a link to porthole.",
     ),
     (
         "Organizing the tree",
@@ -105,7 +128,7 @@ HELP_TOPICS: List[Tuple[str, str]] = [
         "Saving",
         "Every change is written to the current session file immediately "
         "(atomically, with the previous version kept as .bak). The default "
-        "file is ~/.config/multissh-manager/sessions.json. A tree opened from "
+        "file is ~/.config/porthole/sessions.json. A tree opened from "
         "XML or created with File ▸ New isn't tied to a file until you Save "
         "As; the title bar shows • while there are unsaved changes and you'll "
         "be asked before quitting.",
@@ -113,15 +136,15 @@ HELP_TOPICS: List[Tuple[str, str]] = [
     (
         "Options",
         "Edit ▸ Options holds every setting; all of them are saved to "
-        "~/.config/multissh-manager/settings.json as soon as you click Apply "
+        "~/.config/porthole/settings.json as soon as you click Apply "
         "and are restored the next time the app starts.\n\n"
         "Session data file — where your folders and hosts are stored and "
-        "loaded from at startup (default ~/.config/multissh-manager/"
+        "loaded from at startup (default ~/.config/porthole/"
         "sessions.json). Pick a new location to move your sessions there; if "
         "a file already exists at that location you can open it or overwrite "
         "it with your current sessions. The previous file is left in place.\n\n"
         "Activity log — when enabled, one line per event is appended to the "
-        "log file (default ~/.local/state/multissh-manager/activity.log, "
+        "log file (default ~/.local/state/porthole/activity.log, "
         "readable only by you).\n\n"
         "Passwords — where saved passwords are kept (see Saved passwords).\n\n"
         "Terminal — font, scrollback length, theme, post-login delay, whether "

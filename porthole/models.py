@@ -1,5 +1,5 @@
 """
-Data model for MultiSSH Manager.
+Data model for Porthole.
 
 A session store is a tree of Folder nodes containing Host entries (leaf
 nodes). The native on-disk format is plain JSON so it's easy to inspect,
@@ -9,9 +9,12 @@ version-control, and hand-edit. MultiPuTTY-style XML databases and
 
 from __future__ import annotations
 
+import getpass
 import json
 import os
+import re
 import shlex
+import subprocess
 import shutil
 import tempfile
 import uuid
@@ -25,6 +28,69 @@ AUTH_METHODS = ("default", "key", "agent", "password")
 
 def _new_id() -> str:
     return uuid.uuid4().hex[:12]
+
+
+# Other key names for Host fields, found in 1.x/hand-written/converted
+# session files (e.g. {"host": ..., "user": ...}). Only used when the
+# canonical key is missing or empty.
+FIELD_ALIASES = {
+    "username": ("user", "login", "userid", "user_name", "UserName", "Username"),
+    "hostname": ("host", "address", "ip", "server", "HostName"),
+    "private_key_path": ("key_file", "keyfile", "identity_file", "identityfile", "private_key"),
+    "auth_method": ("auth",),
+    "jump_host": ("jump", "proxy_jump", "proxyjump"),
+    "post_login_command": ("post_login", "command"),
+    "extra_ssh_args": ("extra_args", "ssh_args"),
+}
+
+
+def local_user() -> str:
+    """The local login name, which ssh uses when no user is given."""
+    try:
+        return getpass.getuser()
+    except Exception:
+        return os.environ.get("USER", "")
+
+
+def parse_target(text: str) -> Tuple[str, str, Optional[int]]:
+    """Split "user@host:port" / "user@[v6addr]:port" / "host" into
+    (user, host, port). Missing parts come back as "" / None. A bare IPv6
+    address (more than one colon, no brackets) is kept whole."""
+    text = (text or "").strip()
+    user, host, port = "", text, None
+    if "@" in host:
+        user, _, host = host.rpartition("@")
+    m = re.fullmatch(r"\[([^\]]+)\](?::(\d+))?", host)
+    if m:
+        host, port = m.group(1), int(m.group(2)) if m.group(2) else None
+    elif host.count(":") == 1:
+        h, _, p = host.partition(":")
+        if p.isdigit():
+            host, port = h, int(p)
+    if port is not None and not 0 < port < 65536:
+        raise ValueError(f"port out of range: {port}")
+    return user.strip(), host.strip(), port
+
+
+def ssh_config_user(hostname: str, port: int = 22, config_file: Optional[str] = None) -> Optional[str]:
+    """The User ssh would use for hostname according to ~/.ssh/config and
+    /etc/ssh/ssh_config (via `ssh -G`, which never connects). None when
+    ssh isn't available or the config just falls back to the local user."""
+    if not hostname or hostname.startswith("-") or not shutil.which("ssh"):
+        return None
+    try:
+        cmd = ["ssh", "-G", "-p", str(port or 22)] + (["-F", config_file] if config_file else [])
+        out = subprocess.run(cmd + ["--", hostname],
+                             capture_output=True, text=True, timeout=5,
+                             stdin=subprocess.DEVNULL).stdout
+    except (OSError, subprocess.SubprocessError):
+        return None
+    for line in out.splitlines():
+        key, _, value = line.partition(" ")
+        if key == "user":
+            value = value.strip()
+            return value if value and value != local_user() else None
+    return None
 
 
 @dataclass
@@ -53,8 +119,26 @@ class Host:
         h = Host()
         for f in Host.__dataclass_fields__:
             v = d.get(f)
+            if v in (None, "") and f in FIELD_ALIASES:
+                v = next((d[a] for a in FIELD_ALIASES[f] if d.get(a) not in (None, "")), v)
             if v is not None:
                 setattr(h, f, v)
+        if not isinstance(h.username, str):
+            h.username = str(h.username)
+        h.username = h.username.strip()
+        h.hostname = str(h.hostname or "").strip()
+        # "user@host" or "host:port" typed into the host field.
+        if "@" in h.hostname or h.hostname.count(":") == 1 or h.hostname.startswith("["):
+            try:
+                user, host, port = parse_target(h.hostname)
+            except ValueError:
+                user, host, port = "", h.hostname, None
+            if host:
+                h.hostname = host
+                if user and not h.username:
+                    h.username = user
+                if port and d.get("port") in (None, "", 22, "22"):
+                    h.port = port
         try:
             h.port = int(h.port)
         except (TypeError, ValueError):
@@ -78,7 +162,19 @@ class Host:
 
     @property
     def target(self) -> str:
-        return f"{self.username}@{self.hostname}" if self.username else self.hostname
+        return self.target_for()
+
+    def target_for(self, user: Optional[str] = None) -> str:
+        """user@host. A saved username wins; `user` is a one-off username
+        (asked at connect time) used only when none is saved."""
+        u = self.username or (user or "").strip()
+        return f"{u}@{self.hostname}" if u else self.hostname
+
+    @property
+    def needs_username(self) -> bool:
+        """True for ssh hosts with no saved username (ssh would otherwise
+        silently use the local login name)."""
+        return self.protocol == "ssh" and not self.username.strip()
 
     def matches(self, needle: str) -> bool:
         needle = needle.lower()
@@ -87,8 +183,9 @@ class Host:
             for s in (self.name, self.hostname, self.username, self.notes)
         )
 
-    def build_argv(self) -> List[str]:
-        """Build the argv list that launches this host's session."""
+    def build_argv(self, user: Optional[str] = None) -> List[str]:
+        """Build the argv list that launches this host's session. `user`
+        is a one-off username used only when none is saved."""
         if self.protocol == "telnet":
             argv = ["telnet", self.hostname]
             if self.port and int(self.port) != 23:
@@ -108,11 +205,11 @@ class Host:
             argv += ["-J", self.jump_host]
         if self.extra_ssh_args:
             argv += shlex.split(self.extra_ssh_args)
-        argv.append(self.target)
+        argv.append(self.target_for(user))
         return argv
 
-    def command_preview(self) -> str:
-        return " ".join(shlex.quote(a) for a in self.build_argv())
+    def command_preview(self, user: Optional[str] = None) -> str:
+        return " ".join(shlex.quote(a) for a in self.build_argv(user))
 
 
 @dataclass
@@ -229,7 +326,7 @@ class Folder:
 
 def config_dir() -> Path:
     base = os.environ.get("XDG_CONFIG_HOME") or str(Path.home() / ".config")
-    return Path(base) / "multissh-manager"
+    return Path(base) / "porthole"
 
 
 def atomic_write(path: Path, text: str, backup: bool = True) -> None:
@@ -261,7 +358,7 @@ def atomic_write(path: Path, text: str, backup: bool = True) -> None:
 class SessionStore:
     """Owns the root Folder tree and loads/saves the native JSON format."""
 
-    FORMAT_NAME = "multissh-manager"
+    FORMAT_NAME = "porthole"
     FORMAT_VERSION = 2
 
     def __init__(self, root: Optional[Folder] = None, path: Optional[Path] = None):
@@ -286,10 +383,34 @@ class SessionStore:
     def load(path: Path) -> "SessionStore":
         path = Path(path)
         data = json.loads(path.read_text(encoding="utf-8"))
+        if isinstance(data, dict) and "root" not in data and isinstance(data.get("sessions"), list):
+            return SessionStore(root=SessionStore.root_from_flat(data["sessions"]), path=None)
         if not isinstance(data, dict) or "root" not in data:
-            raise ValueError(f"{path.name} is not a MultiSSH Manager session file")
+            raise ValueError(f"{path.name} is not a Porthole session file")
         root = Folder.from_dict(data["root"])
         return SessionStore(root=root, path=path)
+
+    @staticmethod
+    def root_from_flat(sessions: list) -> Folder:
+        """Build a tree from a flat list of {"folder": "A/B", "name", "hostname",
+        "username", ...} entries (MultiPuTTY-to-JSON converter output)."""
+        root = Folder(id="root", name="Sessions")
+        for s in sessions:
+            if not isinstance(s, dict):
+                continue
+            d = dict(s)
+            d.pop("id", None)
+            if str(d.get("protocol", "ssh")).lower() in ("ssh", "telnet"):
+                d["protocol"] = str(d.get("protocol", "ssh")).lower()
+            h = Host.from_dict(d)
+            if h.private_key_path and h.auth_method == "default":
+                h.auth_method = "key"
+            parent = root
+            for part in [p for p in str(s.get("folder") or "").replace("\\", "/").split("/") if p]:
+                parent = next((f for f in parent.folders if f.name == part), None) or \
+                    parent.folders.append(Folder(name=part)) or parent.folders[-1]
+            parent.hosts.append(h)
+        return root
 
     @staticmethod
     def default_path() -> Path:

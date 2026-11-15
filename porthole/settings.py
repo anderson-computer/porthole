@@ -1,4 +1,4 @@
-"""User preferences, stored as JSON in ~/.config/multissh-manager/settings.json."""
+"""User preferences, stored as JSON in ~/.config/porthole/settings.json."""
 
 from __future__ import annotations
 
@@ -29,11 +29,11 @@ class Settings:
     window_width: int = 1200
     window_height: int = 760
     sidebar_width: int = 300
-    data_file: str = ""                  # "" = ~/.config/multissh-manager/sessions.json
+    data_file: str = ""                  # "" = ~/.config/porthole/sessions.json
     log_enabled: bool = False
-    log_file: str = ""                   # "" = ~/.local/state/multissh-manager/activity.log
+    log_file: str = ""                   # "" = ~/.local/state/porthole/activity.log
     password_backend: str = "none"       # none | keyring | vault
-    vault_file: str = ""                 # "" = ~/.config/multissh-manager/vault.json
+    vault_file: str = ""                 # "" = ~/.config/porthole/vault.json
 
     @property
     def data_path(self) -> Path:

@@ -53,6 +53,9 @@ class TerminalTab(Gtk.Box):
         self.env_provider = None  # callable(tab) -> list of "K=V" or None
         self.askpass_token = None
         self.saved_pw_attempts = 0
+        # Username asked for at connect time when the host has none saved
+        # (not written to the session file unless the user chose to).
+        self.user_override: Optional[str] = None
 
         # --- disconnected banner -------------------------------------
         self.infobar = Gtk.InfoBar()
@@ -133,19 +136,20 @@ class TerminalTab(Gtk.Box):
 
     # ------------------------------------------------------------------
     def connect_session(self) -> None:
-        argv = self.host.build_argv()
+        argv = self.host.build_argv(self.user_override)
         if not shutil.which(argv[0]):
             self._set_closed(f"'{argv[0]}' is not installed on this system.")
             return
         self._set_state(STATE_CONNECTING)
         self.infobar.hide()
-        activity.log("session", "connect", host=self.host.name, target=self.host.target,
-                     command=redact(self.host.command_preview()))
+        activity.log("session", "connect", host=self.host.name,
+                     target=self.host.target_for(self.user_override),
+                     command=redact(self.host.command_preview(self.user_override)))
         # Extra environment (askpass hookup for saved passwords), if any.
         envv = self.env_provider(self) if self.env_provider else None
         self._post_login_pending = bool(self.host.post_login_command.strip())
         self.terminal.feed(
-            f"\x1b[2m$ {self.host.command_preview()}\x1b[0m\r\n".encode("utf-8"))
+            f"\x1b[2m$ {self.host.command_preview(self.user_override)}\x1b[0m\r\n".encode("utf-8"))
 
         def on_spawned(term, pid, error, *_):
             if error is not None or pid == -1:
@@ -237,7 +241,7 @@ class TerminalTab(Gtk.Box):
             ctx.remove_class(cls)
         ctx.add_class(_STATE_CLASS[self.state])
         title = self.terminal.get_window_title() or ""
-        tip = f"{self.host.name}\n{self.host.target}" + (f"\n{title}" if title else "")
+        tip = f"{self.host.name}\n{self.host.target_for(self.user_override)}" + (f"\n{title}" if title else "")
         tip += f"\nState: {self.state}"
         self.tab_label.set_tooltip_text(tip)
         self.state_dot.set_tooltip_text(self.state.capitalize())

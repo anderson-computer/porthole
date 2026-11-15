@@ -64,7 +64,7 @@ def _quote(value) -> str:
 
 def default_log_path() -> Path:
     base = os.environ.get("XDG_STATE_HOME") or str(Path.home() / ".local" / "state")
-    return Path(base) / "multissh-manager" / "activity.log"
+    return Path(base) / "porthole" / "activity.log"
 
 
 class ActivityLog:

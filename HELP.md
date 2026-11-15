@@ -1,16 +1,16 @@
-# MultiSSH Manager — Help
+# Porthole — Help
 
 _This file mirrors the in-app Help tab (F1)._
 
 ## Overview
 
-MultiSSH Manager keeps a folder tree of saved hosts on the left and opens one real terminal per connection as a tab on the right. Every tab runs your system's own ssh client, so ~/.ssh/config, ssh-agent, keys and ProxyJump all work exactly as they do in a normal terminal.
+Porthole keeps a folder tree of saved hosts on the left and opens one real terminal per connection as a tab on the right. Every tab runs your system's own ssh client, so ~/.ssh/config, ssh-agent, keys and ProxyJump all work exactly as they do in a normal terminal.
 
 Quick start
   1. Add hosts with Ctrl+Shift+N, or File ▸ Import a MultiPuTTY / PuTTY CM XML file or your ~/.ssh/config.
   2. Double-click a host to connect. Select several hosts, or a folder, and press Connect to open them all.
   3. Tick the checkbox on each tab you want to control together, then type in the broadcast bar (Enter sends), or turn on Live typing to mirror every keystroke.
-  4. Changes save automatically to ~/.config/multissh-manager/sessions.json.
+  4. Changes save automatically to ~/.config/porthole/sessions.json.
 
 ## Keyboard shortcuts
 
@@ -42,6 +42,25 @@ Edit ▸ Add Host (Ctrl+Shift+N) opens a form for name, host, port, user, protoc
   • Password only — disables public-key auth for this host.
 Jump host is passed to ssh -J. Extra ssh args respect shell quoting, e.g. -o "ProxyCommand=nc -X 5 -x proxy:1080 %h %p".
 
+Username is the login name on the remote host; the command connects to user@host. You can also type user@host or host:port into Host / IP. If Username is blank you're asked for it when you connect (prefilled with your local login), unless ~/.ssh/config sets a User for that host. Tick "Save this username" to keep it on the host.
+
+## Command line
+
+```
+porthole [SESSION_FILE] [--connect [USER@]HOST[:PORT]] [--host HOST] [--user USER]
+                 [--port PORT] [--auth default|key|agent|password] [-i KEY] [--name NAME]
+```
+
+  • `porthole --connect admin@10.0.0.5:2222`
+  • `porthole --host 10.0.0.5 --user admin --port 2222`
+  • `porthole --connect 10.0.0.5` (asks for the username)
+
+--connect opens a tab and connects straight away; it can be repeated. Anything missing is asked for: the username in a dialog, the password by ssh in the terminal (or from the keychain/vault for a saved host). Without --auth or -i, a saved host with the same address, port and user is reused with its saved password and options; otherwise the session isn't added to your tree. IPv6: `--connect admin@[fe80::1]:22`.
+
+## Formerly MultiSSH Manager
+
+Porthole was called MultiSSH Manager up to version 2.2.0. On first start, if ~/.config/porthole doesn't exist, Porthole copies ~/.config/multissh-manager (settings, sessions, vault) and ~/.local/state/multissh-manager (activity log) to the new folders and leaves the originals untouched. Keychain passwords saved by MultiSSH Manager are found automatically and copied to Porthole's own entry the first time they're used. The multissh-manager command still works; it's a link to porthole.
+
 ## Organizing the tree
 
 Drag hosts and folders to move them; drop onto a folder to put the item inside it, or between rows to reorder. Right-click for Add / Edit / Duplicate / Delete. Edit ▸ Sort Alphabetically sorts the whole tree. Expanded/collapsed folders are remembered while you work.
@@ -72,15 +91,15 @@ MultiPuTTY's XML schema isn't published, so the importer matches attributes by n
 
 ## Saving
 
-Every change is written to the current session file immediately (atomically, with the previous version kept as .bak). The default file is ~/.config/multissh-manager/sessions.json. A tree opened from XML or created with File ▸ New isn't tied to a file until you Save As; the title bar shows • while there are unsaved changes and you'll be asked before quitting.
+Every change is written to the current session file immediately (atomically, with the previous version kept as .bak). The default file is ~/.config/porthole/sessions.json. A tree opened from XML or created with File ▸ New isn't tied to a file until you Save As; the title bar shows • while there are unsaved changes and you'll be asked before quitting.
 
 ## Options
 
-Edit ▸ Options holds every setting; all of them are saved to ~/.config/multissh-manager/settings.json as soon as you click Apply and are restored the next time the app starts.
+Edit ▸ Options holds every setting; all of them are saved to ~/.config/porthole/settings.json as soon as you click Apply and are restored the next time the app starts.
 
-Session data file — where your folders and hosts are stored and loaded from at startup (default ~/.config/multissh-manager/sessions.json). Pick a new location to move your sessions there; if a file already exists at that location you can open it or overwrite it with your current sessions. The previous file is left in place.
+Session data file — where your folders and hosts are stored and loaded from at startup (default ~/.config/porthole/sessions.json). Pick a new location to move your sessions there; if a file already exists at that location you can open it or overwrite it with your current sessions. The previous file is left in place.
 
-Activity log — when enabled, one line per event is appended to the log file (default ~/.local/state/multissh-manager/activity.log, readable only by you).
+Activity log — when enabled, one line per event is appended to the log file (default ~/.local/state/porthole/activity.log, readable only by you).
 
 Passwords — where saved passwords are kept (see Saved passwords).
 

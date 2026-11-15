@@ -1,10 +1,10 @@
 #!/usr/bin/python3 -I
 """
-SSH_ASKPASS helper for MultiSSH Manager.
+SSH_ASKPASS helper for Porthole.
 
 ssh runs this program (with SSH_ASKPASS_REQUIRE=force) whenever it needs a
 password, passphrase or yes/no answer. It forwards the prompt to the
-running MultiSSH Manager over a private Unix socket and prints the answer
+running Porthole over a private Unix socket and prints the answer
 for ssh to read. It never stores anything.
 """
 import json
@@ -17,7 +17,7 @@ def main() -> int:
     sock_path = os.environ.get("MSM_ASKPASS_SOCK")
     token = os.environ.get("MSM_ASKPASS_TOKEN")
     if not sock_path or not token:
-        sys.stderr.write("multissh-manager askpass: not started by MultiSSH Manager\n")
+        sys.stderr.write("porthole askpass: not started by Porthole\n")
         return 1
     request = {
         "token": token,
@@ -37,7 +37,7 @@ def main() -> int:
                 chunks.append(data)
         reply = json.loads(b"".join(chunks).decode("utf-8"))
     except (OSError, ValueError) as e:
-        sys.stderr.write(f"multissh-manager askpass: {e}\n")
+        sys.stderr.write(f"porthole askpass: {e}\n")
         return 1
     if not reply.get("ok"):
         return 1
