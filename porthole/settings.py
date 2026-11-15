@@ -33,6 +33,7 @@ class Settings:
     log_enabled: bool = False
     log_file: str = ""                   # "" = ~/.local/state/porthole/activity.log
     password_backend: str = "none"       # none | keyring | vault
+    skiff_path: str = "/usr/bin/skiff"   # Skiff SFTP client, for "Open in Skiff"
     vault_file: str = ""                 # "" = ~/.config/porthole/vault.json
 
     @property

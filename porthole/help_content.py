@@ -73,6 +73,10 @@ HELP_TOPICS: List[Tuple[str, str]] = [
         "added to your tree. IPv6: --connect admin@[fe80::1]:22.",
     ),
     (
+        "Open in Skiff (file transfer)",
+        'Right-click a host and choose Open in Skiff to browse its files in the Skiff SFTP client (Skiff 1.3.0 or later). Skiff opens already connected with the host\'s saved user name and port, its private key ("Specific private key" hosts) and its saved password. If no user name is saved you\'re asked first; anything else missing, Skiff asks for. The password is handed over through a private pipe that only Skiff inherits: it never appears on the command line, in the environment, in a file or in the activity log, and Skiff doesn\'t save it. A Skiff that can\'t take --key or --password-fd still opens, and asks for what it couldn\'t be given. The item is greyed out when Skiff isn\'t installed; set its location in Edit ▸ Options ▸ Applications (default /usr/bin/skiff). Jump hosts and extra ssh args aren\'t passed to Skiff.',
+    ),
+    (
         "Formerly MultiSSH Manager",
         "Porthole was called MultiSSH Manager up to version 2.2.0. On first start, if ~/.config/porthole doesn't exist, Porthole copies ~/.config/multissh-manager (settings, sessions, vault) and ~/.local/state/multissh-manager (activity log) to the new folders and leaves the originals untouched. Keychain passwords saved by MultiSSH Manager are found automatically and copied to Porthole's own entry the first time they're used. The multissh-manager command still works; it's a link to porthole.",
     ),

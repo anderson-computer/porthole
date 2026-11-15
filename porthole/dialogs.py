@@ -380,6 +380,20 @@ class OptionsDialog(Gtk.Dialog):
         self.backend.connect("changed", lambda c: self._sync_backend())
         self._sync_backend()
 
+        # --- Applications ------------------------------------------------
+        g = section("Applications")
+        self.skiff_entry = Gtk.Entry(text=settings.skiff_path or "/usr/bin/skiff")
+        path_row(g, 0, "Skiff", self.skiff_entry, self._browse_skiff,
+                 lambda: self.skiff_entry.set_text("/usr/bin/skiff"))
+        self.skiff_status = note("")
+        g.attach(self.skiff_status, 1, 1, 1, 1)
+        g.attach(note("Used by right-click ▸ Open in Skiff, which opens the host in the Skiff "
+                      "SFTP client with its saved user name, port, key and password. The "
+                      "password is passed through a private pipe, never on the command line, "
+                      "in the environment or in a file."), 1, 2, 1, 1)
+        self.skiff_entry.connect("changed", lambda e: self._sync_skiff())
+        self._sync_skiff()
+
         # --- Terminal & appearance --------------------------------------
         g = section("Terminal")
         self.font_btn = Gtk.FontButton(font=settings.font)
@@ -408,6 +422,20 @@ class OptionsDialog(Gtk.Dialog):
         g.attach(self.confirm, 0, len(rows), 2, 1)
         g.attach(self.restore, 0, len(rows) + 1, 2, 1)
         self.show_all()
+
+    def _sync_skiff(self):
+        from .skiff_launch import find_skiff
+        exe = find_skiff(self.skiff_entry.get_text())
+        self.skiff_status.set_text(f"Found: {exe}" if exe else
+                                   "Not found: Open in Skiff is greyed out until Skiff is installed.")
+
+    def _browse_skiff(self):
+        dialog = Gtk.FileChooserNative.new("Choose the Skiff program", self,
+                                           Gtk.FileChooserAction.OPEN, "_Select", "_Cancel")
+        dialog.set_current_folder("/usr/bin")
+        if dialog.run() == Gtk.ResponseType.ACCEPT:
+            self.skiff_entry.set_text(dialog.get_filename())
+        dialog.destroy()
 
     def _sync_backend(self):
         is_vault = self.backend.get_active_id() == BACKEND_VAULT
@@ -458,6 +486,7 @@ class OptionsDialog(Gtk.Dialog):
         s.post_login_idle_ms = int(self.idle.get_value())
         s.confirm_close_connected = self.confirm.get_active()
         s.restore_tabs = self.restore.get_active()
+        s.skiff_path = self.skiff_entry.get_text().strip() or "/usr/bin/skiff"
         s.log_enabled = self.log_check.get_active()
         vp = self.vault_path()
         s.vault_file = "" if vp == default_vault_path() else str(vp)

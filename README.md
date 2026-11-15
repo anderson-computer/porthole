@@ -39,6 +39,11 @@ and known_hosts all behave exactly as they do in a normal shell.
   works offline and on machines without a keyring. ssh gets the password
   through `SSH_ASKPASS` and a private socket, so it is never typed into the
   terminal, written to the session file, or logged.
+- **Open in Skiff.** Right-click a host to open it in the
+  [Skiff](https://github.com/mike0615/skiff) SFTP client, already connected
+  with the saved user, port, key and password. The password goes through a
+  private pipe (`--password-fd`), never argv, the environment or a file.
+  The Skiff location is set in Edit ▸ Options ▸ Applications.
 - **Edit ▸ Options**: choose where the session data file lives, turn on an
   append-only **activity log** (secrets filtered out, never records terminal
   keystrokes or output), plus font, scrollback, theme, and tab restore. All
@@ -53,14 +58,14 @@ BaseOS/AppStream repos. You don't need EPEL or pip.
 ### RPM (recommended)
 
 Install straight from the
-[v3.0.0 release](https://github.com/mike0615/porthole/releases/tag/v3.0.0);
+[v3.1.0 release](https://github.com/mike0615/porthole/releases/tag/v3.1.0);
 dnf pulls the dependencies from the stock repos:
 
 ```bash
 # Rocky 9
-sudo dnf install https://github.com/mike0615/porthole/releases/download/v3.0.0/porthole-3.0.0-1.el9.noarch.rpm
+sudo dnf install https://github.com/mike0615/porthole/releases/download/v3.1.0/porthole-3.1.0-1.el9.noarch.rpm
 # Rocky 10
-sudo dnf install https://github.com/mike0615/porthole/releases/download/v3.0.0/porthole-3.0.0-1.el10.noarch.rpm
+sudo dnf install https://github.com/mike0615/porthole/releases/download/v3.1.0/porthole-3.1.0-1.el10.noarch.rpm
 ```
 
 ### Command line
@@ -130,6 +135,7 @@ run.py                      entry point (python3 run.py [file])
 porthole/
   cli.py                    command-line options (--connect, --host, ...)
   migrate.py                first-run copy of MultiSSH Manager 2.x data
+  skiff_launch.py           Open in Skiff (argv + pipe password handoff)
   app.py                    main window: tree, tabs, broadcast, menus, actions
   terminal_tab.py           one session tab: VTE, state, reconnect, post-login
   dialogs.py                host / folder / preferences dialogs

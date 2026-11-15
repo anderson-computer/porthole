@@ -34,6 +34,7 @@ from .dialogs import (AskpassDialog, FolderDialog, HostDialog, MasterPasswordDia
 from .secret_store import (BACKEND_KEYRING, BACKEND_LABELS, BACKEND_NONE, BACKEND_VAULT,
                            FileVault, KeyringStore, VaultError, default_vault_path)
 from .migrate import migrate_legacy
+from .skiff_launch import find_skiff, launch as skiff_launch
 from .help_content import HELP_TOPICS, OVERVIEW, SHORTCUTS
 from .models import Folder, Host, SessionStore, local_user, ssh_config_user
 from .settings import Settings, default_data_path
@@ -92,7 +93,7 @@ def _options_snapshot(s: Settings) -> dict:
             "log_file": s.log_file, "font": s.font, "scrollback_lines": s.scrollback_lines,
             "theme": s.theme, "post_login_idle_ms": s.post_login_idle_ms,
             "confirm_close_connected": s.confirm_close_connected,
-            "restore_tabs": s.restore_tabs}
+            "restore_tabs": s.restore_tabs, "skiff_path": s.skiff_path}
 
 
 class MainWindow(Gtk.ApplicationWindow):
@@ -152,6 +153,7 @@ class MainWindow(Gtk.ApplicationWindow):
             "duplicate": self._duplicate_selected,
             "delete": self._delete_selected,
             "connect": self._connect_selected,
+            "open-in-skiff": self._open_selected_in_skiff,
             "sort": self._sort_tree,
             "find": lambda: self.search_entry.grab_focus(),
             "close-tab": self._close_current_tab,
@@ -816,7 +818,14 @@ class MainWindow(Gtk.ApplicationWindow):
             sel.unselect_all()
             sel.select_path(hit[0])
         has_sel = sel.count_selected_rows() > 0
+        menu = self._build_tree_menu(has_sel)
+        menu.attach_to_widget(tv, None)
+        menu.show_all()
+        menu.popup_at_pointer(event)
+        return True
 
+    def _build_tree_menu(self, has_sel: bool) -> Gtk.Menu:
+        """Right-click menu for the sidebar tree (current selection)."""
         menu = Gtk.Menu()
 
         def add(label, action, sensitive=True):
@@ -826,6 +835,16 @@ class MainWindow(Gtk.ApplicationWindow):
             menu.append(mi)
 
         add("_Connect", "win.connect", has_sel)
+        skiff_host = self._single_selected_ssh_host()
+        skiff_exe = find_skiff(self.settings.skiff_path)
+        self.lookup_action("open-in-skiff").set_enabled(bool(skiff_host and skiff_exe))
+        add("Open in _Skiff", "win.open-in-skiff")
+        if not skiff_exe:
+            menu.get_children()[-1].set_tooltip_text(
+                f"Skiff not found ({self.settings.skiff_path or '/usr/bin/skiff'}); "
+                "install it or set its path in Edit ▸ Options ▸ Applications")
+        elif not skiff_host:
+            menu.get_children()[-1].set_tooltip_text("Select one ssh host")
         menu.append(Gtk.SeparatorMenuItem())
         add("Add _Host…", "win.add-host")
         add("Add _Folder…", "win.add-folder")
@@ -833,10 +852,7 @@ class MainWindow(Gtk.ApplicationWindow):
         add("_Edit…", "win.edit", has_sel)
         add("D_uplicate", "win.duplicate", has_sel)
         add("_Delete", "win.delete", has_sel)
-        menu.attach_to_widget(tv, None)
-        menu.show_all()
-        menu.popup_at_pointer(event)
-        return True
+        return menu
 
     # --- drag and drop -------------------------------------------------
     def _on_drag_data_get(self, tv, _ctx, data, _info, _time):
@@ -912,6 +928,54 @@ class MainWindow(Gtk.ApplicationWindow):
             return
         for h in hosts:
             self._open_terminal_tab(h)
+
+    def _single_selected_ssh_host(self) -> Optional[Host]:
+        nodes = self._selected_nodes()
+        if len(nodes) == 1 and nodes[0][0] == "host" and nodes[0][1].protocol == "ssh":
+            return nodes[0][1]
+        return None
+
+    def _open_selected_in_skiff(self):
+        host = self._single_selected_ssh_host()
+        if host is None:
+            self._status("Select one ssh host to open in Skiff.")
+            return
+        self.open_in_skiff(host)
+
+    def open_in_skiff(self, host: Host, popen=None) -> bool:
+        """Start Skiff connected to host with its saved user, port, key and
+        password (the password through an inherited pipe; see skiff_launch)."""
+        exe = find_skiff(self.settings.skiff_path)
+        if not exe:
+            error(self, "Skiff not found",
+                  f"{self.settings.skiff_path or '/usr/bin/skiff'} doesn't exist. Install Skiff "
+                  "or set its location in Edit ▸ Options ▸ Applications.")
+            return False
+        user = ""
+        if host.needs_username:
+            user = ssh_config_user(host.hostname, host.port) or ""
+            if not user:
+                go, once = self._ask_username(host)
+                if not go:
+                    return False
+                user = once or ""
+        password = None
+        if (host.save_password and host.auth_method in ("default", "password")
+                and self.settings.password_backend != BACKEND_NONE):
+            password = self._get_saved_password(host)
+        try:
+            kwargs = {"popen": popen} if popen else {}
+            argv, notes = skiff_launch(exe, host, user, password, **kwargs)
+        except (OSError, RuntimeError, ValueError) as e:
+            error(self, "Could not start Skiff", str(e))
+            activity.log("skiff", "launch-failed", host=host.name, error=e)
+            return False
+        finally:
+            password = None
+        activity.log("skiff", "open", host=host.name, target=host.target_for(user),
+                     command=" ".join(argv), password_passed="--password-fd" in argv)
+        self._status(f"Opened {host.name} in Skiff" + (f" ({'; '.join(notes)})" if notes else "") + ".")
+        return True
 
     def _connect_first_match(self):
         for model, it in self._iter_rows():

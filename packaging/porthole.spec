@@ -1,4 +1,4 @@
-%{!?app_version: %global app_version 3.0.0}
+%{!?app_version: %global app_version 3.1.0}
 %global debug_package %{nil}
 
 Name:           porthole
@@ -95,6 +95,13 @@ gtk-update-icon-cache -q %{_datadir}/icons/hicolor &>/dev/null || :
 gtk-update-icon-cache -q %{_datadir}/icons/hicolor &>/dev/null || :
 
 %changelog
+* Sat Nov 14 2026 Mike Anderson <mike@andersoncomputer.us> - 3.1.0-1
+- Right-click a host > Open in Skiff: starts the Skiff SFTP client connected
+  with the host's saved user, port, key (--key) and password. The password
+  is passed through an inherited pipe (--password-fd), never argv, the
+  environment or a file. Greyed out when Skiff isn't found.
+- Edit > Options > Applications: Skiff location (default /usr/bin/skiff).
+
 * Sat Nov 14 2026 Mike Anderson <mike@andersoncomputer.us> - 3.0.0-1
 - Renamed from MultiSSH Manager to Porthole: package porthole, command
   /usr/bin/porthole (multissh-manager kept as a symlink), new icon,
