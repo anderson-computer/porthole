@@ -14,6 +14,8 @@ Every tab runs your system's own `ssh` inside a VTE terminal (the engine
 GNOME Terminal uses), so `~/.ssh/config`, `ssh-agent`, keys, `ProxyJump`
 and known_hosts all behave exactly as they do in a normal shell.
 
+**Who it's for:** Linux administrators who keep many SSH sessions open and want a Multi PuTTY Manager-style tabbed session manager, with broadcast input, on Rocky Linux 9 and 10.
+
 ## Features
 
 - **Folder tree** with live search, drag-and-drop, duplicate, and sort.
@@ -161,3 +163,7 @@ See [HELP.md](HELP.md) for the full usage guide.
 MIT. See [LICENSE](LICENSE).
 
 Author: Mike Anderson — https://www.andersoncomputer.net
+
+---
+
+**Part of the Cyber Chief toolkit** by Anderson Computer. Sibling projects: [Flagship](https://github.com/mike0615/flagship) · [Flagship Web](https://github.com/mike0615/flagship-web) · [Skiff](https://github.com/mike0615/skiff) · [Sonar](https://github.com/mike0615/sonar) · [Helm RDP](https://github.com/mike0615/helm-rdp) · [Pathfinder](https://github.com/mike0615/pathfinder) · [FleetOps](https://github.com/mike0615/fleet-ops) · [Dockyard](https://github.com/mike0615/dockyard) · [CommShack](https://github.com/mike0615/commshack).
