@@ -14,6 +14,10 @@ Every tab runs your system's own `ssh` inside a VTE terminal (the engine
 GNOME Terminal uses), so `~/.ssh/config`, `ssh-agent`, keys, `ProxyJump`
 and known_hosts all behave exactly as they do in a normal shell.
 
+![Porthole showing a folder tree of saved hosts on the left and three broadcast-linked SSH tabs on the right](docs/images/porthole-main.png)
+
+*Screenshot: Porthole with demo sessions (a local test sshd, no real hosts). One command was broadcast to three ticked tabs at once.*
+
 ## Features
 
 - **Folder tree** with live search, drag-and-drop, duplicate, and sort.
